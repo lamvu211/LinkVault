@@ -1983,349 +1983,177 @@ fun SettingsView(
             }
         }
 
-        // SharedPreferences Sync Integration
+        // SharedPreferences & Context for CSV Export
         val context = LocalContext.current
-        val sharedPrefs = remember { context.getSharedPreferences("linkvault_prefs", Context.MODE_PRIVATE) }
-        var syncStatus by remember { mutableStateOf(sharedPrefs.getString("google_sync_status", "disconnected") ?: "disconnected") }
-        var sheetUrl by remember { mutableStateOf(sharedPrefs.getString("google_sheet_url", "") ?: "") }
-        var sheetFileId by remember { mutableStateOf(sharedPrefs.getString("google_sheet_file_id", "") ?: "") }
-        var sharedPublicly by remember { mutableStateOf(sharedPrefs.getBoolean("google_shared_publicly", false)) }
-        var oauthToken by remember { mutableStateOf(sharedPrefs.getString("google_oauth_token", "") ?: "") }
-
-        var isExecutingSync by remember { mutableStateOf(false) }
-        var showUnregisteredDialog by remember { mutableStateOf(false) }
         val coroutineScope = rememberCoroutineScope()
-        
-        val recoverAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == android.app.Activity.RESULT_OK) {
-                Toast.makeText(context, "Permission granted! Please click 'Sync to Drive' again.", Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(context, "Permission denied. Cannot sync.", Toast.LENGTH_SHORT).show()
+
+        var showExportChoiceDialog by remember { mutableStateOf(false) }
+        var showSavedSuccessDialog by remember { mutableStateOf(false) }
+        var savedUri by remember { mutableStateOf<Uri?>(null) }
+
+        val csvExportLauncher = rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv")
+        ) { uri ->
+            if (uri != null) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            val csvString = generateCsvContent(links, categories)
+                            outputStream.write(csvString.toByteArray(Charsets.UTF_8))
+                        }
+                        withContext(Dispatchers.Main) {
+                            savedUri = uri
+                            showSavedSuccessDialog = true
+                            Toast.makeText(context, "Đã xuất dữ liệu thành công ra file CSV!", Toast.LENGTH_LONG).show()
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Xuất file thất bại: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
             }
         }
 
-        // Google Drive Integration Card
-        Card(
-            modifier = Modifier.fillMaxWidth().testTag("google_drive_card"),
-            colors = CardDefaults.cardColors(containerColor = colors.surface),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, NaturalBorder)
+        fun shareCsvDirectly() {
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    val csvString = generateCsvContent(links, categories)
+                    val exportDir = File(context.cacheDir, "exports")
+                    if (!exportDir.exists()) {
+                        exportDir.mkdirs()
+                    }
+                    val file = File(exportDir, "LinkVault_Export.csv")
+                    file.writeBytes(csvString.toByteArray(Charsets.UTF_8))
+                    
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file
+                    )
+                    
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/csv"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    
+                    withContext(Dispatchers.Main) {
+                        context.startActivity(Intent.createChooser(shareIntent, "Chia sẻ file CSV qua:"))
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Chia sẻ thất bại: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+
+        // Single Minimal "Export Data" Button (Không rườm rà mô tả)
+        Button(
+            onClick = {
+                showExportChoiceDialog = true
+            },
+            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("export_csv_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "GOOGLE DRIVE INTEGRATION",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = NaturalPrimary,
-                    letterSpacing = 1.sp
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(if (syncStatus == "synced") Color(0xFFE8F5E9) else colors.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (syncStatus == "synced") Icons.Default.CloudDone else Icons.Default.CloudQueue,
-                            contentDescription = null,
-                            tint = if (syncStatus == "synced") Color(0xFF2E7D32) else NaturalTertiary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (syncStatus == "synced") "Synced Successfully" else "No Spreadsheet Synced",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = NaturalText
-                        )
-                        Text(
-                            text = if (syncStatus == "synced") {
-                                if (sharedPublicly) "Status: Shared to anyone with link" else "Status: Private to me"
-                            } else {
-                                "Export your saved links directly to Google Drive"
-                            },
-                            fontSize = 11.sp,
-                            color = NaturalTertiary
-                        )
-                    }
-                }
-
-                if (syncStatus == "synced") {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Sheet: LinkVault",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = NaturalText
-                    )
-                    Text(
-                        text = sheetUrl,
-                        fontSize = 11.sp,
-                        color = NaturalPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable {
-                            try {
-                                val openIntent = Intent(Intent.ACTION_VIEW, Uri.parse(sheetUrl))
-                                context.startActivity(openIntent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Cannot open URL", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Sync Button
-                    Button(
-                        onClick = { 
-                            if (isExecutingSync) return@Button
-                            if (userEmail.isEmpty()) {
-                                Toast.makeText(context, "You need to sign in first", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-                            
-                            isExecutingSync = true
-                            coroutineScope.launch {
-                                try {
-                                    val androidAccount = android.accounts.Account(userEmail, "com.google")
-                                    val token = withContext(Dispatchers.IO) {
-                                        GoogleAuthUtil.getToken(
-                                            context,
-                                            androidAccount,
-                                            "oauth2:https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets"
-                                        )
-                                    }
-                                    
-                                    val result = com.example.data.GoogleWorkspaceSyncManager.syncToDriveReal(
-                                        token = token,
-                                        links = links,
-                                        categories = categories
-                                    )
-                                    
-                                    isExecutingSync = false
-                                    when (result) {
-                                        is com.example.data.SyncResult.Success -> {
-                                            sharedPrefs.edit()
-                                                .putString("google_sync_status", "synced")
-                                                .putString("google_sheet_url", result.sheetUrl)
-                                                .putString("google_sheet_file_id", result.fileId)
-                                                .putString("google_oauth_token", token)
-                                                .apply()
-                                            
-                                            syncStatus = "synced"
-                                            sheetUrl = result.sheetUrl
-                                            sheetFileId = result.fileId
-                                            oauthToken = token
-                                            Toast.makeText(context, "Google Workspace Synchronization Successful!", Toast.LENGTH_LONG).show()
-                                        }
-                                        is com.example.data.SyncResult.Failure -> {
-                                            Toast.makeText(context, "Sync Failed: ${result.message}", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
-                                    isExecutingSync = false
-                                    e.intent?.let { recoverAuthLauncher.launch(it) }
-                                } catch (e: Exception) {
-                                    isExecutingSync = false
-                                    val msg = e.message ?: ""
-                                    if (msg.contains("UnregisteredOnApiConsole", ignoreCase = true) || 
-                                        e.javaClass.simpleName.contains("GoogleAuth", ignoreCase = true) ||
-                                        msg.contains("API Console", ignoreCase = true)) {
-                                        showUnregisteredDialog = true
-                                    } else {
-                                        Toast.makeText(context, "Auth failed: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            }
-                        },
-                        modifier = Modifier.weight(1f).height(40.dp).testTag("sync_to_drive_button"),
-                        colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(0.dp),
-                        enabled = !isExecutingSync
-                    ) {
-                        if (isExecutingSync) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Syncing...",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Sync,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (syncStatus == "synced") "Sync Now" else "Sync to Drive",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-
-                    // Share Button
-                    Button(
-                        onClick = {
-                            if (syncStatus != "synced") return@Button
-                            
-                            coroutineScope.launch {
-                                var shareSucceeded = true
-                                if (oauthToken.isNotBlank() && !sheetFileId.contains("mock")) {
-                                    val result = com.example.data.GoogleWorkspaceSyncManager.shareFileToAnyoneReal(
-                                        token = oauthToken,
-                                        fileId = sheetFileId
-                                    )
-                                    if (result is com.example.data.ShareResult.Failure) {
-                                        shareSucceeded = false
-                                        Toast.makeText(context, "API Share failed: ${result.message}", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-
-                                if (shareSucceeded) {
-                                    sharedPrefs.edit().putBoolean("google_shared_publicly", true).apply()
-                                    sharedPublicly = true
-                                    Toast.makeText(context, "Updated Sheet permissions to: Anyone with link!", Toast.LENGTH_SHORT).show()
-                                    
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, "LinkVault Spreadsheet Index")
-                                        putExtra(Intent.EXTRA_TEXT, "Here is my customized LinkVault Index Spreadsheet:\n$sheetUrl")
-                                    }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Share LinkVault Index Direct"))
-                                }
-                            }
-                        },
-                        enabled = syncStatus == "synced",
-                        modifier = Modifier.weight(1f).height(40.dp).testTag("share_drive_button"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (syncStatus == "synced") Color(0xFFE3F2FD) else colors.surfaceVariant,
-                            disabledContainerColor = colors.surfaceVariant.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = if (syncStatus == "synced") Color(0xFF1565C0) else NaturalTertiary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Share Index",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (syncStatus == "synced") Color(0xFF1565C0) else NaturalTertiary
-                        )
-                    }
-                }
-            }
+            Icon(
+                imageVector = Icons.Default.Save,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = Color.White
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Export Data (Xuất dữ liệu)",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
         }
 
-        if (showUnregisteredDialog) {
+        // Export Choice Dialog (Save vs Share)
+        if (showExportChoiceDialog) {
             AlertDialog(
-                onDismissRequest = { showUnregisteredDialog = false },
-                title = {
+                onDismissRequest = { showExportChoiceDialog = false },
+                title = { Text("Export Data (Xuất dữ liệu)", fontWeight = FontWeight.Bold, color = NaturalText) },
+                text = { Text("Bạn muốn lưu tệp CSV về máy hay chia sẻ trực tiếp qua ứng dụng khác?", color = NaturalSecondary) },
+                confirmButton = {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.SettingsSuggest,
-                            contentDescription = null,
-                            tint = NaturalPrimary
-                        )
-                        Text(
-                            text = "OAuth Setup Required",
-                            fontWeight = FontWeight.Bold,
-                            color = NaturalText,
-                            fontSize = 18.sp
-                        )
-                    }
-                },
-                text = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = "Error: UnregisteredOnApiConsole (Lỗi cấu hình Google API)",
-                            color = Color(0xFFC62828),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            text = "Google Play Services requires registering this application ID (com.aistudio.linkvault.lxkqpz) and package signing fingerprint (SHA-1) inside the Google Cloud Console under an OAuth client to authorize live sync.\n\n*Để chạy đồng bộ trực tiếp, mã định danh ứng dụng và khóa chữ ký cần được đăng ký trong Google Cloud Console.*",
-                            fontSize = 12.sp,
-                            color = NaturalText,
-                            lineHeight = 17.sp
-                        )
-                        Divider(color = NaturalBorder.copy(alpha = 0.3f))
-                        Text(
-                            text = "To easily test all sync, sheet viewing, and public sharing features right now in this development container, you can bypass this by enabling the Sandbox Simulator!\n\n*Để thử nghiệm đầy đủ toàn bộ tính năng đồng bộ và chia sẻ công khai ngay lập tức, bạn có thể chọn Sử dụng Giả lập Sandbox bên dưới!*",
-                            fontSize = 11.sp,
-                            color = NaturalTertiary,
-                            lineHeight = 15.sp
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val mockFileId = "1_vault_sheet_mock_" + (1000..9999).random()
-                            val mockUrl = "https://docs.google.com/spreadsheets/d/$mockFileId/view"
-                            
-                            sharedPrefs.edit()
-                                .putString("google_sync_status", "synced")
-                                .putString("google_sheet_url", mockUrl)
-                                .putString("google_sheet_file_id", mockFileId)
-                                .putBoolean("google_shared_publicly", false)
-                                .apply()
-                            
-                            syncStatus = "synced"
-                            sheetUrl = mockUrl
-                            sheetFileId = mockFileId
-                            sharedPublicly = false
-                            showUnregisteredDialog = false
-                            Toast.makeText(context, "Bật chế độ Giả lập / Sandbox thành công!", Toast.LENGTH_LONG).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Use Sandbox Simulator (Dùng Giả lập)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        // Option Save
+                        Button(
+                            onClick = {
+                                showExportChoiceDialog = false
+                                csvExportLauncher.launch("LinkVault_Export.csv")
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Icon(Icons.Default.Save, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Lưu về máy (Save)", color = Color.White, fontSize = 12.sp)
+                        }
+
+                        // Option Share
+                        Button(
+                            onClick = {
+                                showExportChoiceDialog = false
+                                shareCsvDirectly()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = NaturalSecondary),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Icon(Icons.Default.Share, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Chia sẻ (Share)", color = Color.White, fontSize = 12.sp)
+                        }
                     }
                 },
                 dismissButton = {
-                    TextButton(
-                        onClick = { showUnregisteredDialog = false }
+                    TextButton(onClick = { showExportChoiceDialog = false }) {
+                        Text("Hủy", color = NaturalTertiary)
+                    }
+                }
+            )
+        }
+
+        // Saved Success Open-Immediate Dialog
+        if (showSavedSuccessDialog && savedUri != null) {
+            AlertDialog(
+                onDismissRequest = { showSavedSuccessDialog = false },
+                title = { Text("Xuất tệp thành công!", fontWeight = FontWeight.Bold, color = NaturalText) },
+                text = { Text("Dữ liệu của bạn đã được xuất ra định dạng CSV và lưu vào thiết bị dưới tên tệp bạn đã chọn. Bạn có muốn mở xem ngay lập tức?", color = NaturalSecondary) },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showSavedSuccessDialog = false
+                            try {
+                                val openIntent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(savedUri, "text/csv")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(Intent.createChooser(openIntent, "Mở file CSV bằng:"))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Không thể mở file tự động. Bạn có thể tự tìm kiếm file trong thư mục Downloads của máy.", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
                     ) {
-                        Text("Dismiss (Đóng)", color = NaturalTertiary, fontSize = 12.sp)
+                        Text("Mở tệp ngay", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSavedSuccessDialog = false }) {
+                        Text("Để sau", color = NaturalTertiary)
                     }
                 }
             )
@@ -3511,4 +3339,51 @@ fun CategoryDetailsView(
         )
     }
 }
+
+// Global helper functions for CSV Export
+fun generateCsvContent(
+    links: List<com.example.data.SavedLink>,
+    categories: List<com.example.data.Category>
+): String {
+    val sb = StringBuilder()
+    // Add UTF-8 BOM (Byte Order Mark) to force Microsoft Excel / Google Sheets to recognize Vietnamese Unicode
+    sb.append('\uFEFF')
+    
+    // Header
+    sb.append("Link,Note,Category\r\n")
+    
+    // Row content
+    links.forEach { link ->
+        val catName = if (link.categoryId == 0) {
+            "General"
+        } else {
+            categories.find { it.id == link.categoryId }?.name ?: "General"
+        }
+        
+        sb.append(escapeCsvField(link.url)).append(",")
+          .append(escapeCsvField(link.note)).append(",")
+          .append(escapeCsvField(catName)).append("\r\n")
+    }
+    
+    return sb.toString()
+}
+
+fun escapeCsvField(field: String): String {
+    if (field.isEmpty()) return ""
+    var needsQuotes = false
+    var escaped = field
+    if (escaped.contains("\"")) {
+        escaped = escaped.replace("\"", "\"\"")
+        needsQuotes = true
+    }
+    if (escaped.contains(",") || escaped.contains("\n") || escaped.contains("\r") || escaped.contains(";")) {
+        needsQuotes = true
+    }
+    return if (needsQuotes) {
+        "\"$escaped\""
+    } else {
+        escaped
+    }
+}
+
 
