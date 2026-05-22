@@ -16,3 +16,12 @@
 local.properties
 .env
 debug.keystore
+*.keystore
+*.jks
+*.p12
+*.pem
+*.base64
+*.apk
+*.aab
+.build-outputs/
+firebase-applet-config.json
