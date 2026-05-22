@@ -1,0 +1,6 @@
+{
+  "name": "LinkVault",
+  "description": "Lưu trữ, phân loại và quản lý các liên kết (links) đã chia sẻ một cách thông minh và tối ưu nhất.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
