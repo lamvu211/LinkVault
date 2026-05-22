@@ -19,6 +19,10 @@ class LinkRepository(
         categoryDao.updateCategory(category)
     }
 
+    suspend fun updateCategories(categories: List<Category>) {
+        categoryDao.updateCategories(categories)
+    }
+
     suspend fun deleteCategory(category: Category) {
         categoryDao.deleteCategory(category)
     }

@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CategoryDao {
-    @Query("SELECT * FROM categories ORDER BY timestamp DESC")
+    @Query("SELECT * FROM categories ORDER BY displayOrder ASC, timestamp ASC")
     fun getAllCategoriesFlow(): Flow<List<Category>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -13,6 +13,9 @@ interface CategoryDao {
 
     @Update
     suspend fun updateCategory(category: Category)
+
+    @Update
+    suspend fun updateCategories(categories: List<Category>)
 
     @Delete
     suspend fun deleteCategory(category: Category)

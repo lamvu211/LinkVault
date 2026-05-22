@@ -117,13 +117,30 @@ class LinkViewModel(private val repository: LinkRepository) : ViewModel() {
 
     fun saveCategory(name: String, logo: String) {
         viewModelScope.launch {
-            repository.insertCategory(com.example.data.Category(name = name, logo = logo))
+            val currentMaxOrder = allCategories.value.maxOfOrNull { it.displayOrder } ?: 0
+            repository.insertCategory(com.example.data.Category(name = name, logo = logo, displayOrder = currentMaxOrder + 1))
         }
     }
 
     fun updateCategory(category: com.example.data.Category) {
         viewModelScope.launch {
             repository.updateCategory(category)
+        }
+    }
+
+    fun reorderCategories(fromIndex: Int, toIndex: Int) {
+        val currentCategories = allCategories.value.toMutableList()
+        if (fromIndex in currentCategories.indices && toIndex in currentCategories.indices) {
+            val movedItem = currentCategories.removeAt(fromIndex)
+            currentCategories.add(toIndex, movedItem)
+            
+            val updatedList = currentCategories.mapIndexed { index, category ->
+                category.copy(displayOrder = index)
+            }
+            
+            viewModelScope.launch {
+                repository.updateCategories(updatedList)
+            }
         }
     }
 

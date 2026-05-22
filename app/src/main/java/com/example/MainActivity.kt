@@ -14,6 +14,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -112,6 +117,22 @@ class MainActivity : ComponentActivity() {
                 "dark" -> true
                 "light" -> false
                 else -> isSystemDark
+            }
+
+            DisposableEffect(isDark) {
+                enableEdgeToEdge(
+                    statusBarStyle = if (isDark) {
+                        androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                    },
+                    navigationBarStyle = if (isDark) {
+                        androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                    }
+                )
+                onDispose {}
             }
 
             MyApplicationTheme(
@@ -567,7 +588,8 @@ fun MainAppScreen(
                                 categoryDraftName = ""
                                 categoryDraftLogo = "logo_01_work"
                                 showAddCategoryForm = true
-                            }
+                            },
+                            onReorder = { from, to -> viewModel.reorderCategories(from, to) }
                         )
                     }
                 }
@@ -2792,7 +2814,8 @@ fun DashedBox(
 fun CategoriesDirectoryView(
     categories: List<com.example.data.Category>,
     onCategoryClick: (com.example.data.Category) -> Unit,
-    onAddCategory: () -> Unit
+    onAddCategory: () -> Unit,
+    onReorder: (from: Int, to: Int) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val NaturalBg = colors.background
@@ -2827,7 +2850,8 @@ fun CategoriesDirectoryView(
             CategoriesGrid(
                 categories = categories,
                 onCategoryClick = onCategoryClick,
-                onAddClick = onAddCategory
+                onAddClick = onAddCategory,
+                onReorder = onReorder
             )
         }
     }
@@ -2837,11 +2861,18 @@ fun CategoriesDirectoryView(
 fun CategoriesGrid(
     categories: List<com.example.data.Category>,
     onCategoryClick: (com.example.data.Category) -> Unit,
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit,
+    onReorder: (from: Int, to: Int) -> Unit
 ) {
     val totalSlots = 12
     val cols = 3
-    val rows = 4
+    val totalNeeded = if (categories.size + 1 > totalSlots) categories.size + 1 else totalSlots
+    val rows = (totalNeeded + cols - 1) / cols
+
+    var draggedIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var targetIndex by remember { mutableStateOf<Int?>(null) }
+    val itemBounds = remember { mutableMapOf<Int, androidx.compose.ui.geometry.Rect>() }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -2855,40 +2886,115 @@ fun CategoriesGrid(
                 for (col in 0 until cols) {
                     val index = row * cols + col
                     Box(modifier = Modifier.weight(1f)) {
-                        val category = categories.getOrNull(index)
-                        if (category != null) {
+                        if (index < categories.size) {
+                            val category = categories[index]
                             val logoKey = category.logo
                             val isCustom = logoKey.startsWith("/") || logoKey.startsWith("file://") || logoKey.startsWith("content://") || logoKey.contains("/")
-                            Card(
+                            
+                            val isDragged = draggedIndex == index
+                            val isTargeted = targetIndex == index && draggedIndex != index
+
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .aspectRatio(1f)
-                                    .clickable { onCategoryClick(category) }
-                                    .testTag("category_grid_item_${category.id}"),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                if (isCustom) {
-                                    CategoryLogoDisplay(
-                                        logoKey = logoKey,
-                                        shape = RoundedCornerShape(12.dp),
-                                        fillMax = true,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                } else {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(8.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center
-                                    ) {
-                                        CategoryLogoDisplay(
-                                            logoKey = category.logo,
-                                            size = 36.dp,
-                                            tint = MaterialTheme.colorScheme.primary
+                                    .onGloballyPositioned { coords ->
+                                        itemBounds[index] = coords.boundsInWindow()
+                                    }
+                                    .zIndex(if (isDragged) 1f else 0f)
+                                    .graphicsLayer {
+                                        if (isDragged) {
+                                            translationX = dragOffset.x
+                                            translationY = dragOffset.y
+                                            scaleX = 1.05f
+                                            scaleY = 1.05f
+                                            alpha = 0.9f
+                                            shadowElevation = 8f
+                                        } else if (isTargeted) {
+                                            scaleX = 0.95f
+                                            scaleY = 0.95f
+                                        }
+                                    }
+                                    .pointerInput(categories) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = { _ ->
+                                                draggedIndex = index
+                                                targetIndex = index
+                                                dragOffset = androidx.compose.ui.geometry.Offset.Zero
+                                            },
+                                            onDragEnd = {
+                                                if (draggedIndex != null && targetIndex != null && draggedIndex != targetIndex) {
+                                                    onReorder(draggedIndex!!, targetIndex!!)
+                                                }
+                                                draggedIndex = null
+                                                targetIndex = null
+                                                dragOffset = androidx.compose.ui.geometry.Offset.Zero
+                                            },
+                                            onDragCancel = {
+                                                draggedIndex = null
+                                                targetIndex = null
+                                                dragOffset = androidx.compose.ui.geometry.Offset.Zero
+                                            },
+                                            onDrag = { change: PointerInputChange, dragAmount: androidx.compose.ui.geometry.Offset ->
+                                                change.consume()
+                                                dragOffset += dragAmount
+                                                
+                                                val draggedBounds = itemBounds[draggedIndex]
+                                                if (draggedBounds != null) {
+                                                    val currentCenter = androidx.compose.ui.geometry.Offset(
+                                                        x = draggedBounds.center.x + dragOffset.x,
+                                                        y = draggedBounds.center.y + dragOffset.y
+                                                    )
+                                                    
+                                                    // Find which item we are overlapping
+                                                    var newTarget: Int? = null
+                                                    for ((i, bounds) in itemBounds) {
+                                                        if (i < categories.size && bounds.contains(currentCenter)) {
+                                                            newTarget = i
+                                                            break
+                                                        }
+                                                    }
+                                                    targetIndex = newTarget ?: targetIndex
+                                                }
+                                            }
                                         )
+                                    }
+                            ) {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable { if (draggedIndex == null) onCategoryClick(category) }
+                                        .testTag("category_grid_item_${category.id}"),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isTargeted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                    ),
+                                    border = BorderStroke(
+                                        if (isTargeted) 2.dp else 1.dp, 
+                                        if (isTargeted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    if (isCustom) {
+                                        CategoryLogoDisplay(
+                                            logoKey = logoKey,
+                                            shape = RoundedCornerShape(12.dp),
+                                            fillMax = true,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(8.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            CategoryLogoDisplay(
+                                                logoKey = category.logo,
+                                                size = 36.dp,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
                                     }
                                 }
                             }
