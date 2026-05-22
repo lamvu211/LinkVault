@@ -107,7 +107,12 @@ class MainActivity : ComponentActivity() {
             var themeMode by remember { mutableStateOf(sharedPrefs.getString("theme_mode", "light") ?: "light") }
             var themeSelection by remember { mutableStateOf(sharedPrefs.getString("theme_name", "denim") ?: "denim") }
 
-            val isDark = themeMode == "dark"
+            val isSystemDark = isSystemInDarkTheme()
+            val isDark = when(themeMode) {
+                "dark" -> true
+                "light" -> false
+                else -> isSystemDark
+            }
 
             MyApplicationTheme(
                 darkTheme = isDark,
@@ -1862,6 +1867,26 @@ fun SettingsView(
                             color = if (isDarkActive) NaturalPrimary else NaturalTertiary
                         )
                     }
+
+                    // System Mode Button
+                    val isSystemActive = themeMode == "system"
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSystemActive) NaturalAccentChip else colors.surfaceVariant)
+                            .border(1.dp, if (isSystemActive) NaturalPrimary else NaturalBorder, RoundedCornerShape(10.dp))
+                            .clickable { onThemeModeChange("system") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "System",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSystemActive) NaturalPrimary else NaturalTertiary
+                        )
+                    }
                 }
             }
         }
@@ -2200,7 +2225,7 @@ fun SettingsView(
                             onClick = {
                                 if (isExecutingSync) return@TextButton
                                 val mockFileId = "1_vault_sheet_mock_" + (1000..9999).random()
-                                val mockUrl = "https://docs.google.com/spreadsheets/d/$mockFileId/edit"
+                                val mockUrl = "https://docs.google.com/spreadsheets/d/$mockFileId/view"
                                 
                                 sharedPrefs.edit()
                                     .putString("google_sync_status", "synced")
@@ -2672,20 +2697,24 @@ fun CropImageDialog(
                                     offsetX = (offsetX + pan.x).coerceIn(-maxOffsetX, maxOffsetX)
                                     offsetY = (offsetY + pan.y).coerceIn(-maxOffsetY, maxOffsetY)
                                 }
-                            }
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
+                        val imageWidthDp = if (aspectRatio >= 1f) viewportSizeDp * aspectRatio else viewportSizeDp
+                        val imageHeightDp = if (aspectRatio >= 1f) viewportSizeDp else viewportSizeDp / aspectRatio
+
                         Image(
                             bitmap = bitmap.asImageBitmap(),
                             contentDescription = "Pinch and drag preview",
                             modifier = Modifier
-                                .fillMaxSize()
+                                .requiredSize(imageWidthDp, imageHeightDp)
                                 .graphicsLayer(
                                     scaleX = scale,
                                     scaleY = scale,
                                     translationX = offsetX,
                                     translationY = offsetY
                                 ),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Fit
                         )
                     }
                 }
