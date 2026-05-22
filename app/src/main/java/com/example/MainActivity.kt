@@ -8,6 +8,11 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.android.gms.auth.GoogleAuthUtil
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
@@ -73,8 +78,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.provider.MediaStore
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.rememberAsyncImagePainter
@@ -87,18 +90,13 @@ import kotlinx.coroutines.CoroutineScope
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var viewModel: LinkViewModel
+    private var activeViewModel: LinkViewModel? = null
     private var isFromShareIntent = false
+    private var pendingSharedText: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // Initialize repository and viewmodel using constructor injection
-        val database = LinkDatabase.getDatabase(this)
-        val repository = LinkRepository(database.savedLinkDao, database.categoryDao)
-        val factory = LinkViewModelFactory(repository)
-        viewModel = ViewModelProvider(this, factory)[LinkViewModel::class.java]
 
         // Read intent data if app was started via Share Sheet
         handleSharedIntent(intent)
@@ -119,22 +117,6 @@ class MainActivity : ComponentActivity() {
                 else -> isSystemDark
             }
 
-            DisposableEffect(isDark) {
-                enableEdgeToEdge(
-                    statusBarStyle = if (isDark) {
-                        androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-                    } else {
-                        androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
-                    },
-                    navigationBarStyle = if (isDark) {
-                        androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-                    } else {
-                        androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
-                    }
-                )
-                onDispose {}
-            }
-
             MyApplicationTheme(
                 darkTheme = isDark,
                 themeName = themeSelection
@@ -149,8 +131,22 @@ class MainActivity : ComponentActivity() {
                         isLoggedIn = true
                     }
                 } else {
+                    val currentContext = LocalContext.current
+                    val currentViewModel = remember(userEmail) {
+                        val database = LinkDatabase.getDatabase(currentContext, userEmail)
+                        val repository = LinkRepository(database.savedLinkDao, database.categoryDao)
+                        val factory = LinkViewModelFactory(repository)
+                        ViewModelProvider(this@MainActivity, factory)[userEmail, LinkViewModel::class.java].also { vm ->
+                            activeViewModel = vm
+                            pendingSharedText?.let {
+                                vm.setSharedText(it)
+                                pendingSharedText = null
+                            }
+                        }
+                    }
+
                     MainAppScreen(
-                        viewModel = viewModel,
+                        viewModel = currentViewModel,
                         userEmail = userEmail,
                         themeMode = themeMode,
                         themeSelection = themeSelection,
@@ -188,7 +184,11 @@ class MainActivity : ComponentActivity() {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
             if (!sharedText.isNullOrBlank()) {
                 isFromShareIntent = true
-                viewModel.setSharedText(sharedText)
+                if (activeViewModel != null) {
+                    activeViewModel?.setSharedText(sharedText)
+                } else {
+                    pendingSharedText = sharedText
+                }
             }
         }
     }
@@ -1992,8 +1992,17 @@ fun SettingsView(
         var sharedPublicly by remember { mutableStateOf(sharedPrefs.getBoolean("google_shared_publicly", false)) }
         var oauthToken by remember { mutableStateOf(sharedPrefs.getString("google_oauth_token", "") ?: "") }
 
-        var showSyncDialog by remember { mutableStateOf(false) }
+        var isExecutingSync by remember { mutableStateOf(false) }
+        var showUnregisteredDialog by remember { mutableStateOf(false) }
         val coroutineScope = rememberCoroutineScope()
+        
+        val recoverAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                Toast.makeText(context, "Permission granted! Please click 'Sync to Drive' again.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(context, "Permission denied. Cannot sync.", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         // Google Drive Integration Card
         Card(
@@ -2083,25 +2092,101 @@ fun SettingsView(
                 ) {
                     // Sync Button
                     Button(
-                        onClick = { showSyncDialog = true },
+                        onClick = { 
+                            if (isExecutingSync) return@Button
+                            if (userEmail.isEmpty()) {
+                                Toast.makeText(context, "You need to sign in first", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            
+                            isExecutingSync = true
+                            coroutineScope.launch {
+                                try {
+                                    val androidAccount = android.accounts.Account(userEmail, "com.google")
+                                    val token = withContext(Dispatchers.IO) {
+                                        GoogleAuthUtil.getToken(
+                                            context,
+                                            androidAccount,
+                                            "oauth2:https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets"
+                                        )
+                                    }
+                                    
+                                    val result = com.example.data.GoogleWorkspaceSyncManager.syncToDriveReal(
+                                        token = token,
+                                        links = links,
+                                        categories = categories
+                                    )
+                                    
+                                    isExecutingSync = false
+                                    when (result) {
+                                        is com.example.data.SyncResult.Success -> {
+                                            sharedPrefs.edit()
+                                                .putString("google_sync_status", "synced")
+                                                .putString("google_sheet_url", result.sheetUrl)
+                                                .putString("google_sheet_file_id", result.fileId)
+                                                .putString("google_oauth_token", token)
+                                                .apply()
+                                            
+                                            syncStatus = "synced"
+                                            sheetUrl = result.sheetUrl
+                                            sheetFileId = result.fileId
+                                            oauthToken = token
+                                            Toast.makeText(context, "Google Workspace Synchronization Successful!", Toast.LENGTH_LONG).show()
+                                        }
+                                        is com.example.data.SyncResult.Failure -> {
+                                            Toast.makeText(context, "Sync Failed: ${result.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                } catch (e: com.google.android.gms.auth.UserRecoverableAuthException) {
+                                    isExecutingSync = false
+                                    e.intent?.let { recoverAuthLauncher.launch(it) }
+                                } catch (e: Exception) {
+                                    isExecutingSync = false
+                                    val msg = e.message ?: ""
+                                    if (msg.contains("UnregisteredOnApiConsole", ignoreCase = true) || 
+                                        e.javaClass.simpleName.contains("GoogleAuth", ignoreCase = true) ||
+                                        msg.contains("API Console", ignoreCase = true)) {
+                                        showUnregisteredDialog = true
+                                    } else {
+                                        Toast.makeText(context, "Auth failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
                         modifier = Modifier.weight(1f).height(40.dp).testTag("sync_to_drive_button"),
                         colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(0.dp)
+                        contentPadding = PaddingValues(0.dp),
+                        enabled = !isExecutingSync
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Sync,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = Color.White
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (syncStatus == "synced") "Sync Now" else "Sync to Drive",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                        if (isExecutingSync) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Syncing...",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (syncStatus == "synced") "Sync Now" else "Sync to Drive",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
                     }
 
                     // Share Button
@@ -2163,165 +2248,84 @@ fun SettingsView(
             }
         }
 
-        // Sync dialog options
-        if (showSyncDialog) {
-            var inputToken by remember { mutableStateOf(oauthToken) }
-            var isExecutingSync by remember { mutableStateOf(false) }
-            var errorMessage by remember { mutableStateOf<String?>(null) }
-
+        if (showUnregisteredDialog) {
             AlertDialog(
-                onDismissRequest = { if (!isExecutingSync) showSyncDialog = false },
+                onDismissRequest = { showUnregisteredDialog = false },
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.CloudUpload, null, tint = NaturalPrimary)
-                        Text("Drive Workspace Synchronize", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = NaturalText)
+                        Icon(
+                            imageVector = Icons.Default.SettingsSuggest,
+                            contentDescription = null,
+                            tint = NaturalPrimary
+                        )
+                        Text(
+                            text = "OAuth Setup Required",
+                            fontWeight = FontWeight.Bold,
+                            color = NaturalText,
+                            fontSize = 18.sp
+                        )
                     }
                 },
                 text = {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            text = "This automatically creates a Google Sheet named \"LinkVault\" in your Google Drive with columns: Link / Note / Category.",
-                            fontSize = 13.sp,
-                            color = NaturalText
+                            text = "Error: UnregisteredOnApiConsole (Lỗi cấu hình Google API)",
+                            color = Color(0xFFC62828),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
                         )
-
                         Text(
-                            text = "To sync live using your true storage, enter a Google OAuth Access Token below. Otherwise, use the built-in Sandbox simulator.",
+                            text = "Google Play Services requires registering this application ID (com.aistudio.linkvault.lxkqpz) and package signing fingerprint (SHA-1) inside the Google Cloud Console under an OAuth client to authorize live sync.\n\n*Để chạy đồng bộ trực tiếp, mã định danh ứng dụng và khóa chữ ký cần được đăng ký trong Google Cloud Console.*",
+                            fontSize = 12.sp,
+                            color = NaturalText,
+                            lineHeight = 17.sp
+                        )
+                        Divider(color = NaturalBorder.copy(alpha = 0.3f))
+                        Text(
+                            text = "To easily test all sync, sheet viewing, and public sharing features right now in this development container, you can bypass this by enabling the Sandbox Simulator!\n\n*Để thử nghiệm đầy đủ toàn bộ tính năng đồng bộ và chia sẻ công khai ngay lập tức, bạn có thể chọn Sử dụng Giả lập Sandbox bên dưới!*",
                             fontSize = 11.sp,
-                            color = NaturalTertiary
+                            color = NaturalTertiary,
+                            lineHeight = 15.sp
                         )
-
-                        BasicTextField(
-                            value = inputToken,
-                            onValueChange = { inputToken = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .border(1.dp, NaturalBorder, RoundedCornerShape(8.dp))
-                                .background(colors.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 12.dp, vertical = 14.dp)
-                                .testTag("oauth_token_field"),
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = NaturalText),
-                            decorationBox = { innerTextField ->
-                                if (inputToken.isEmpty()) {
-                                    Text("PASTE GOOGLE OAUTH TOKEN HERE (OPTIONAL)", fontSize = 10.sp, color = NaturalTertiary)
-                                }
-                                innerTextField()
-                            }
-                        )
-
-                        if (errorMessage != null) {
-                            Text(
-                                text = errorMessage!!,
-                                color = Color(0xFFC62828),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        if (isExecutingSync) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = NaturalPrimary)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text("Connecting Workspace APIs...", fontSize = 12.sp, color = NaturalPrimary, fontWeight = FontWeight.Medium)
-                            }
-                        }
                     }
                 },
                 confirmButton = {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Button(
+                        onClick = {
+                            val mockFileId = "1_vault_sheet_mock_" + (1000..9999).random()
+                            val mockUrl = "https://docs.google.com/spreadsheets/d/$mockFileId/view"
+                            
+                            sharedPrefs.edit()
+                                .putString("google_sync_status", "synced")
+                                .putString("google_sheet_url", mockUrl)
+                                .putString("google_sheet_file_id", mockFileId)
+                                .putBoolean("google_shared_publicly", false)
+                                .apply()
+                            
+                            syncStatus = "synced"
+                            sheetUrl = mockUrl
+                            sheetFileId = mockFileId
+                            sharedPublicly = false
+                            showUnregisteredDialog = false
+                            Toast.makeText(context, "Bật chế độ Giả lập / Sandbox thành công!", Toast.LENGTH_LONG).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        // Sandbox offline Option
-                        TextButton(
-                            onClick = {
-                                if (isExecutingSync) return@TextButton
-                                val mockFileId = "1_vault_sheet_mock_" + (1000..9999).random()
-                                val mockUrl = "https://docs.google.com/spreadsheets/d/$mockFileId/view"
-                                
-                                sharedPrefs.edit()
-                                    .putString("google_sync_status", "synced")
-                                    .putString("google_sheet_url", mockUrl)
-                                    .putString("google_sheet_file_id", mockFileId)
-                                    .apply()
-                                
-                                syncStatus = "synced"
-                                sheetUrl = mockUrl
-                                sheetFileId = mockFileId
-                                errorMessage = null
-                                showSyncDialog = false
-                                Toast.makeText(context, "Successfully exported ${links.size} items to LinkVault (Sandbox)!", Toast.LENGTH_LONG).show()
-                            },
-                            enabled = !isExecutingSync,
-                            colors = ButtonDefaults.textButtonColors(contentColor = NaturalPrimary)
-                        ) {
-                            Text("Simulate", fontWeight = FontWeight.Bold)
-                        }
-
-                        // Real sync option calling workspace API via Retrofit
-                        Button(
-                            onClick = {
-                                if (isExecutingSync) return@Button
-                                if (inputToken.isBlank()) {
-                                    errorMessage = "Please enter an OAuth access token to perform real API requests"
-                                    return@Button
-                                }
-                                isExecutingSync = true
-                                errorMessage = null
-
-                                coroutineScope.launch {
-                                    val result = com.example.data.GoogleWorkspaceSyncManager.syncToDriveReal(
-                                        token = inputToken.trim(),
-                                        links = links,
-                                        categories = categories
-                                    )
-
-                                    isExecutingSync = false
-                                    when (result) {
-                                        is com.example.data.SyncResult.Success -> {
-                                            sharedPrefs.edit()
-                                                .putString("google_sync_status", "synced")
-                                                .putString("google_sheet_url", result.sheetUrl)
-                                                .putString("google_sheet_file_id", result.fileId)
-                                                .putString("google_oauth_token", inputToken.trim())
-                                                .apply()
-                                            
-                                            syncStatus = "synced"
-                                            sheetUrl = result.sheetUrl
-                                            sheetFileId = result.fileId
-                                            oauthToken = inputToken.trim()
-                                            showSyncDialog = false
-                                            Toast.makeText(context, "Live Google Workspace Synchronization Successful!", Toast.LENGTH_LONG).show()
-                                        }
-                                        is com.example.data.SyncResult.Failure -> {
-                                            errorMessage = result.message
-                                        }
-                                    }
-                                }
-                            },
-                            enabled = !isExecutingSync,
-                            colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
-                        ) {
-                            Text("Real API Sync", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
+                        Text("Use Sandbox Simulator (Dùng Giả lập)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 },
                 dismissButton = {
                     TextButton(
-                        onClick = { showSyncDialog = false },
-                        enabled = !isExecutingSync
+                        onClick = { showUnregisteredDialog = false }
                     ) {
-                        Text("Cancel", color = NaturalTertiary)
+                        Text("Dismiss (Đóng)", color = NaturalTertiary, fontSize = 12.sp)
                     }
                 }
             )

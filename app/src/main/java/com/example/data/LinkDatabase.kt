@@ -22,18 +22,19 @@ abstract class LinkDatabase : RoomDatabase() {
             }
         }
 
-        fun getDatabase(context: Context): LinkDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+        private val instances = mutableMapOf<String, LinkDatabase>()
+
+        fun getDatabase(context: Context, userEmail: String): LinkDatabase {
+            val dbName = "link_vault_${userEmail.hashCode()}_db"
+            return instances.getOrPut(dbName) {
+                Room.databaseBuilder(
                     context.applicationContext,
                     LinkDatabase::class.java,
-                    "link_vault_database"
+                    if (userEmail.isEmpty()) "link_vault_database" else dbName
                 )
-                    .addMigrations(MIGRATION_1_2)
-                    .fallbackToDestructiveMigration(false)
-                    .build()
-                INSTANCE = instance
-                instance
+                .addMigrations(MIGRATION_1_2)
+                .fallbackToDestructiveMigration(false)
+                .build()
             }
         }
     }
