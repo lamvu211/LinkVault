@@ -65,6 +65,5 @@ LinkVault is designed around local storage. Avoid committing generated APKs, key
 ## Current App Details
 
 - App name: **LinkVault**
-- Application ID: `com.aistudio.linkvault.lxkqpz`
 - Minimum SDK: 24
 - Target SDK: 36

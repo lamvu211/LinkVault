@@ -64,6 +64,7 @@ import com.example.data.SavedLink
 import com.example.data.LinkDatabase
 import com.example.data.LinkRepository
 import com.example.ui.LinkViewModel
+import com.example.ui.ImportedLinkDraft
 import com.example.ui.LinkViewModelFactory
 import com.example.ui.LoginScreen
 import com.example.ui.SortOrder
@@ -88,6 +89,33 @@ import androidx.compose.ui.text.font.FontStyle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 
+private fun appText(language: String, vi: String, en: String): String = if (language == "en") en else vi
+
+private fun searchPlaceholder(language: String): String = appText(language, "Bạn muốn tìm gì?", "What are you looking for?")
+
+fun formatRelativeTime(timestamp: Long, language: String): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+
+    return when {
+        diff < 0 -> appText(language, "Vừa xong", "Just now")
+        seconds < 60 -> appText(language, "Vừa xong", "Just now")
+        minutes < 60 -> appText(language, "${minutes} phút trước", "${minutes}m ago")
+        hours < 24 -> appText(language, "${hours} giờ trước", "${hours}h ago")
+        days == 1L -> appText(language, "Hôm qua", "Yesterday")
+        days < 7 -> appText(language, "${days} ngày trước", "${days}d ago")
+        else -> {
+            val locale = if (language == "en") java.util.Locale.ENGLISH else java.util.Locale("vi", "VN")
+            val sdf = java.text.SimpleDateFormat("MMM dd", locale)
+            sdf.format(java.util.Date(timestamp))
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
 
     private var activeViewModel: LinkViewModel? = null
@@ -109,6 +137,7 @@ class MainActivity : ComponentActivity() {
             var userEmail by remember { mutableStateOf(sharedPrefs.getString("user_email", "") ?: "") }
             var themeMode by remember { mutableStateOf(sharedPrefs.getString("theme_mode", "light") ?: "light") }
             var themeSelection by remember { mutableStateOf(sharedPrefs.getString("theme_name", "denim") ?: "denim") }
+            var language by remember { mutableStateOf(sharedPrefs.getString("language", "vi") ?: "vi") }
 
             val isSystemDark = isSystemInDarkTheme()
             val isDark = when(themeMode) {
@@ -122,14 +151,17 @@ class MainActivity : ComponentActivity() {
                 themeName = themeSelection
             ) {
                 if (!isLoggedIn) {
-                    LoginScreen { email ->
-                        sharedPrefs.edit()
-                            .putBoolean("is_logged_in", true)
-                            .putString("user_email", email)
-                            .apply()
-                        userEmail = email
-                        isLoggedIn = true
-                    }
+                    LoginScreen(
+                        language = language,
+                        onLoginSuccess = { email ->
+                            sharedPrefs.edit()
+                                .putBoolean("is_logged_in", true)
+                                .putString("user_email", email)
+                                .apply()
+                            userEmail = email
+                            isLoggedIn = true
+                        }
+                    )
                 } else {
                     val currentContext = LocalContext.current
                     val currentViewModel = remember(userEmail) {
@@ -157,6 +189,11 @@ class MainActivity : ComponentActivity() {
                         onThemeSelectionChange = { name ->
                             sharedPrefs.edit().putString("theme_name", name).apply()
                             themeSelection = name
+                        },
+                        language = language,
+                        onLanguageChange = { selectedLanguage ->
+                            sharedPrefs.edit().putString("language", selectedLanguage).apply()
+                            language = selectedLanguage
                         },
                         onLogout = {
                             sharedPrefs.edit().remove("is_logged_in").remove("user_email").apply()
@@ -202,11 +239,14 @@ fun MainAppScreen(
     themeSelection: String,
     onThemeModeChange: (String) -> Unit,
     onThemeSelectionChange: (String) -> Unit,
+    language: String,
+    onLanguageChange: (String) -> Unit,
     onLogout: () -> Unit,
     isFromShareIntent: Boolean = false,
     onFinishActivity: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val t = { vi: String, en: String -> appText(language, vi, en) }
 
     // Resolve local overriding color parameters seamlessly
     val colors = MaterialTheme.colorScheme
@@ -384,7 +424,7 @@ fun MainAppScreen(
                             )
                         }
                         Text(
-                            text = "Links",
+                            text = t("Liên kết", "Links"),
                             fontSize = 11.sp,
                             fontWeight = if (currentTab == "links") FontWeight.Bold else FontWeight.Medium,
                             color = if (currentTab == "links") NaturalText else NaturalSecondary.copy(alpha = 0.6f),
@@ -419,7 +459,7 @@ fun MainAppScreen(
                             )
                         }
                         Text(
-                            text = "Categories",
+                            text = t("Danh mục", "Categories"),
                             fontSize = 11.sp,
                             fontWeight = if (currentTab == "categories") FontWeight.Bold else FontWeight.Medium,
                             color = if (currentTab == "categories") NaturalText else NaturalSecondary.copy(alpha = 0.6f),
@@ -454,7 +494,7 @@ fun MainAppScreen(
                             )
                         }
                         Text(
-                            text = "Settings",
+                            text = t("Cài đặt", "Settings"),
                             fontSize = 11.sp,
                             fontWeight = if (currentTab == "settings") FontWeight.Bold else FontWeight.Medium,
                             color = if (currentTab == "settings") NaturalText else NaturalSecondary.copy(alpha = 0.6f),
@@ -501,7 +541,7 @@ fun MainAppScreen(
                         onUpdateSort = { viewModel.updateSortOrder(it) },
                         onDeleteLink = { 
                             viewModel.deleteLink(it)
-                            Toast.makeText(context, "Deleted link successfully!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, t("Đã xóa liên kết.", "Deleted link successfully."), Toast.LENGTH_SHORT).show()
                         },
                         onOpenUrl = { url ->
                             val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -523,7 +563,7 @@ fun MainAppScreen(
                                     }
                                     context.startActivity(browserIntent)
                                 } catch (ex: Exception) {
-                                    Toast.makeText(context, "No browser app detected.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, t("Không tìm thấy ứng dụng trình duyệt.", "No browser app detected."), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         },
@@ -534,7 +574,9 @@ fun MainAppScreen(
                             selectedCategoryId = link.categoryId
                             editingLink = link
                             showAddManualForm = true
-                        }
+                        },
+                        onShareLink = { link -> shareLinkItem(context, link, language) },
+                        language = language
                     )
                 }
                 "categories" -> {
@@ -553,7 +595,7 @@ fun MainAppScreen(
                             },
                             onDeleteLink = {
                                 viewModel.deleteLink(it)
-                                Toast.makeText(context, "Deleted link successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, t("Đã xóa liên kết.", "Deleted link successfully."), Toast.LENGTH_SHORT).show()
                             },
                             onOpenUrl = { url ->
                                 val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -575,14 +617,17 @@ fun MainAppScreen(
                                         }
                                         context.startActivity(browserIntent)
                                     } catch (ex: Exception) {
-                                        Toast.makeText(context, "No browser app detected.", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, t("Không tìm thấy ứng dụng trình duyệt.", "No browser app detected."), Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                            }
+                            },
+                            onShareLink = { link -> shareLinkItem(context, link, language) },
+                            language = language
                         )
                     } else {
                         CategoriesDirectoryView(
                             categories = categories,
+                            language = language,
                             onCategoryClick = { activeCategoryDetail = it },
                             onAddCategory = {
                                 categoryDraftName = ""
@@ -602,7 +647,10 @@ fun MainAppScreen(
                         onThemeSelectionChange = onThemeSelectionChange,
                         onLogout = onLogout,
                         links = links,
-                        categories = categories
+                        categories = categories,
+                        language = language,
+                        onLanguageChange = onLanguageChange,
+                        onImportLinks = { rows -> viewModel.importLinks(rows) }
                     )
                 }
             }
@@ -627,8 +675,9 @@ fun MainAppScreen(
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .wrapContentHeight()
-                                .imePadding() // Dynamically elevates card completely above any virtual keyboard
+                                .fillMaxHeight(0.88f)
+                                .navigationBarsPadding()
+                                .imePadding()
                                 .clickable(enabled = false, onClick = {}) // stop click propagation
                                 .testTag("add_link_form_container"),
                         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -655,7 +704,7 @@ fun MainAppScreen(
                             // URL input field & Action SAVE in SAME Row
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    text = "URL / Link",
+                                    text = t("Đường dẫn", "Link"),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = NaturalSecondary
@@ -692,7 +741,7 @@ fun MainAppScreen(
                                     Button(
                                         onClick = {
                                             if (inputUrl.isBlank()) {
-                                                Toast.makeText(context, "Please enter a valid link URL.", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, t("Vui lòng nhập đường dẫn hợp lệ.", "Please enter a valid link."), Toast.LENGTH_SHORT).show()
                                                 return@Button
                                             }
                                             if (editingLink != null) {
@@ -701,7 +750,7 @@ fun MainAppScreen(
                                                     note = inputNote,
                                                     categoryId = selectedCategoryId
                                                 ))
-                                                Toast.makeText(context, "Link edited successfully!", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, t("Đã cập nhật ghi chú.", "Note updated."), Toast.LENGTH_SHORT).show()
                                             } else {
                                                 viewModel.saveLink(
                                                     title = "",
@@ -710,7 +759,7 @@ fun MainAppScreen(
                                                     tags = emptyList(),
                                                     categoryId = selectedCategoryId
                                                 )
-                                                Toast.makeText(context, "Link saved with note successfully!", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, t("Đã lưu ghi chú.", "Note saved."), Toast.LENGTH_SHORT).show()
                                             }
                                             resetForm()
                                             if (isFromShareIntent) {
@@ -724,7 +773,7 @@ fun MainAppScreen(
                                             .testTag("submit_link_button")
                                     ) {
                                         Text(
-                                            text = "Save",
+                                            text = if (editingLink != null) t("Cập nhật", "Update") else t("Lưu", "Save"),
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.sp
@@ -736,7 +785,7 @@ fun MainAppScreen(
                             // Supplemental notes field
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    text = "Your Note (Ghi chú)",
+                                    text = t("Ghi chú", "Note"),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = NaturalSecondary
@@ -744,7 +793,7 @@ fun MainAppScreen(
                                 OutlinedTextField(
                                     value = inputNote,
                                     onValueChange = { if (it.length <= 60) inputNote = it },
-                                    placeholder = { Text("Please take note here...", color = NaturalTertiary) },
+                                    placeholder = { Text(t("Nhập ghi chú tại đây...", "Write a note here..."), color = NaturalTertiary) },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(110.dp)
@@ -769,7 +818,7 @@ fun MainAppScreen(
 
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    text = "Category (Danh mục)",
+                                    text = t("Danh mục", "Category"),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = NaturalSecondary
@@ -814,7 +863,7 @@ fun MainAppScreen(
                                                     modifier = Modifier.size(20.dp)
                                                 )
                                                 Text(
-                                                    text = "None (Không có)",
+                                                    text = t("Không có danh mục", "No category"),
                                                     fontSize = 14.sp,
                                                     color = NaturalTertiary
                                                 )
@@ -842,7 +891,7 @@ fun MainAppScreen(
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Icon(Icons.Default.List, null, tint = NaturalTertiary)
-                                                    Text("None (Không có)", color = NaturalText)
+                                                    Text(t("Không có danh mục", "No category"), color = NaturalText)
                                                 }
                                             },
                                             onClick = {
@@ -878,14 +927,14 @@ fun MainAppScreen(
                 if (showDiscardConfirmation) {
                     AlertDialog(
                         onDismissRequest = { showDiscardConfirmation = false },
-                        title = { Text("Save Changes?", color = NaturalText, fontWeight = FontWeight.Bold) },
-                        text = { Text("You have unsaved details in your draft form. Do you want to save or discard them?", color = NaturalTertiary) },
+                        title = { Text(t("Lưu thay đổi?", "Save changes?"), color = NaturalText, fontWeight = FontWeight.Bold) },
+                        text = { Text(t("Bạn có thay đổi chưa lưu. Bạn muốn lưu hay bỏ bản nháp này?", "You have unsaved changes. Do you want to save or discard this draft?"), color = NaturalTertiary) },
                         confirmButton = {
                             Button(
                                 onClick = {
                                     showDiscardConfirmation = false
                                     if (inputUrl.isBlank()) {
-                                        Toast.makeText(context, "Please enter a valid link URL.", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Vui lòng nhập đường dẫn hợp lệ.", Toast.LENGTH_SHORT).show()
                                         return@Button
                                     }
                                     if (editingLink != null) {
@@ -894,7 +943,7 @@ fun MainAppScreen(
                                             note = inputNote,
                                             categoryId = selectedCategoryId
                                         ))
-                                        Toast.makeText(context, "Link edited successfully!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Đã cập nhật ghi chú.", Toast.LENGTH_SHORT).show()
                                     } else {
                                         viewModel.saveLink(
                                             title = "",
@@ -903,7 +952,7 @@ fun MainAppScreen(
                                             tags = emptyList(),
                                             categoryId = selectedCategoryId
                                         )
-                                        Toast.makeText(context, "Link saved with note successfully!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Đã lưu ghi chú.", Toast.LENGTH_SHORT).show()
                                     }
                                     resetForm()
                                     if (isFromShareIntent) {
@@ -912,7 +961,7 @@ fun MainAppScreen(
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
                             ) {
-                                Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text(t("Lưu", "Save"), color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         },
                         dismissButton = {
@@ -925,7 +974,7 @@ fun MainAppScreen(
                                     }
                                 }
                             ) {
-                                Text("Discard", color = Color.Red, fontWeight = FontWeight.Bold)
+                                Text(t("Bỏ qua", "Discard"), color = Color.Red, fontWeight = FontWeight.Bold)
                             }
                         }
                     )
@@ -938,7 +987,7 @@ fun MainAppScreen(
                 var createNameError by remember { mutableStateOf(false) }
                 AlertDialog(
                     onDismissRequest = { showAddCategoryForm = false },
-                    title = { Text("Create Category (Tạo Danh mục mới)", fontWeight = FontWeight.Bold, color = NaturalText) },
+                    title = { Text(t("Tạo danh mục mới", "Create category"), fontWeight = FontWeight.Bold, color = NaturalText) },
                     text = {
                         Column(
                             modifier = Modifier
@@ -952,7 +1001,7 @@ fun MainAppScreen(
                                     categoryDraftName = it
                                     createNameError = false
                                 },
-                                label = { Text("Category Name (Tên danh mục)") },
+                                label = { Text(t("Tên danh mục", "Category name")) },
                                 isError = createNameError,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -968,7 +1017,7 @@ fun MainAppScreen(
                             )
 
                             Text(
-                                text = "Logo / Icon Selection",
+                                text = t("Chọn biểu tượng", "Icon selection"),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = NaturalSecondary
@@ -1009,7 +1058,7 @@ fun MainAppScreen(
                                         )
                                     }
                                     Text(
-                                        text = "Change",
+                                        text = t("Thay đổi", "Change"),
                                         fontSize = 12.sp,
                                         color = NaturalPrimary,
                                         fontWeight = FontWeight.Bold
@@ -1023,23 +1072,23 @@ fun MainAppScreen(
                             onClick = {
                                 if (categoryDraftName.isBlank()) {
                                     createNameError = true
-                                    Toast.makeText(context, "Please enter a category name.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, t("Vui lòng nhập tên danh mục.", "Please enter a category name."), Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
                                 viewModel.saveCategory(categoryDraftName, categoryDraftLogo)
-                                Toast.makeText(context, "Category created successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, t("Đã tạo danh mục.", "Category created."), Toast.LENGTH_SHORT).show()
                                 showAddCategoryForm = false
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
                         ) {
-                            Text("Create", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(t("Tạo", "Create"), color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     },
                     dismissButton = {
                         TextButton(
                             onClick = { showAddCategoryForm = false }
                         ) {
-                            Text("Cancel", color = NaturalTertiary)
+                            Text(t("Hủy", "Cancel"), color = NaturalTertiary)
                         }
                     }
                 )
@@ -1048,7 +1097,7 @@ fun MainAppScreen(
             if (showLogoLibraryDialog) {
                 AlertDialog(
                     onDismissRequest = { showLogoLibraryDialog = false },
-                    title = { Text("Choose Minimalism Icon", fontWeight = FontWeight.Bold, color = NaturalText) },
+                    title = { Text(t("Chọn biểu tượng", "Choose icon"), fontWeight = FontWeight.Bold, color = NaturalText) },
                     text = {
                         Column(
                             modifier = Modifier.fillMaxWidth(),
@@ -1070,12 +1119,12 @@ fun MainAppScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(Icons.Default.PhotoLibrary, null, tint = NaturalPrimary)
-                                    Text("Choose from Gallery", color = NaturalPrimary, fontWeight = FontWeight.SemiBold)
+                                    Text(t("Chọn từ thư viện", "Choose from Gallery"), color = NaturalPrimary, fontWeight = FontWeight.SemiBold)
                                 }
                             }
 
                             Text(
-                                "Or select standard minimalism icon:",
+                                t("Hoặc chọn biểu tượng có sẵn:", "Or select a standard icon:"),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = NaturalSecondary
@@ -1135,7 +1184,7 @@ fun MainAppScreen(
                     confirmButton = {},
                     dismissButton = {
                         TextButton(onClick = { showLogoLibraryDialog = false }) {
-                            Text("Close", color = NaturalPrimary)
+                            Text(t("Đóng", "Close"), color = NaturalPrimary)
                         }
                     }
                 )
@@ -1181,9 +1230,12 @@ fun LinksDirectoryView(
     onDeleteLink: (SavedLink) -> Unit,
     onOpenUrl: (String) -> Unit,
     getDomain: (String) -> String,
-    onEditLink: (SavedLink) -> Unit
+    onEditLink: (SavedLink) -> Unit,
+    onShareLink: (SavedLink) -> Unit,
+    language: String
 ) {
     val context = LocalContext.current
+    val t = { vi: String, en: String -> appText(language, vi, en) }
     var showSortDropdown by remember { mutableStateOf(false) }
 
     // Resolve local overriding colors
@@ -1235,7 +1287,7 @@ fun LinksDirectoryView(
                         Icon(Icons.Default.Close, contentDescription = "Exit selection mode", tint = NaturalText)
                     }
                     Text(
-                        text = "${selectedLinks.size} Selected",
+                        text = t("Đã chọn ${selectedLinks.size}", "${selectedLinks.size} selected"),
                         fontWeight = FontWeight.Bold,
                         color = NaturalText,
                         fontSize = 16.sp
@@ -1250,19 +1302,19 @@ fun LinksDirectoryView(
                         selectedLinks.clear()
                         selectedLinks.addAll(links)
                     }) {
-                        Text("Select All", color = NaturalPrimary, fontWeight = FontWeight.Bold)
+                        Text(t("Chọn tất cả", "Select all"), color = NaturalPrimary, fontWeight = FontWeight.Bold)
                     }
 
                     IconButton(
                         onClick = {
                             if (selectedLinks.isEmpty()) {
-                                Toast.makeText(context, "No links selected.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, t("Chưa chọn liên kết nào.", "No links selected."), Toast.LENGTH_SHORT).show()
                                 return@IconButton
                             }
                             selectedLinks.forEach { linkItem ->
                                 onDeleteLink(linkItem)
                             }
-                            Toast.makeText(context, "Deleted ${selectedLinks.size} links.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, t("Đã xóa ${selectedLinks.size} liên kết.", "Deleted ${selectedLinks.size} links."), Toast.LENGTH_SHORT).show()
                             isSelectionMode = false
                             selectedLinks.clear()
                         },
@@ -1299,7 +1351,7 @@ fun LinksDirectoryView(
                             modifier = Modifier.testTag("app_header_title")
                         )
                         Text(
-                            text = "Safe storage for bookmarks & shared feeds",
+                            text = t("Lưu trữ an toàn các liên kết quan trọng", "Save important links in one safe place"),
                             fontSize = 12.sp,
                             color = NaturalTertiary
                         )
@@ -1329,7 +1381,7 @@ fun LinksDirectoryView(
                     Box(modifier = Modifier.weight(1.0f)) {
                         if (searchQuery.isEmpty()) {
                             Text(
-                                text = "Search saved links...",
+                                text = searchPlaceholder(language),
                                 color = NaturalTertiary,
                                 fontSize = 14.sp
                             )
@@ -1387,7 +1439,7 @@ fun LinksDirectoryView(
                             modifier = Modifier.background(colors.surface)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Sort by Date (Recent)", color = NaturalText) },
+                                text = { Text(t("Sắp xếp theo ngày mới nhất", "Sort by newest"), color = NaturalText) },
                                 onClick = {
                                     onUpdateSort(SortOrder.RECENT)
                                     showSortDropdown = false
@@ -1395,7 +1447,7 @@ fun LinksDirectoryView(
                                 leadingIcon = { Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = NaturalSecondary) }
                             )
                             DropdownMenuItem(
-                                text = { Text("Sort Alphabetically (A-Z)", color = NaturalText) },
+                                text = { Text(t("Sắp xếp theo tên A-Z", "Sort by title A-Z"), color = NaturalText) },
                                 onClick = {
                                     onUpdateSort(SortOrder.TITLE)
                                     showSortDropdown = false
@@ -1403,7 +1455,7 @@ fun LinksDirectoryView(
                                 leadingIcon = { Icon(Icons.Default.Home, contentDescription = null, tint = NaturalSecondary) }
                             )
                             DropdownMenuItem(
-                                text = { Text("Sort by Domain Host", color = NaturalText) },
+                                text = { Text(t("Sắp xếp theo tên miền", "Sort by domain"), color = NaturalText) },
                                 onClick = {
                                     onUpdateSort(SortOrder.DOMAIN)
                                     showSortDropdown = false
@@ -1425,7 +1477,7 @@ fun LinksDirectoryView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (searchQuery.isNotEmpty()) "FILTERED RESULTS" else "RECENTLY SAVED",
+                text = if (searchQuery.isNotEmpty()) t("KẾT QUẢ TÌM KIẾM", "SEARCH RESULTS") else t("ĐÃ LƯU GẦN ĐÂY", "RECENTLY SAVED"),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = NaturalTertiary,
@@ -1433,7 +1485,7 @@ fun LinksDirectoryView(
             )
 
             Text(
-                text = "${links.size} link" + if (links.size != 1) "s" else "",
+                text = t("${links.size} liên kết", "${links.size} links"),
                 fontSize = 11.sp,
                 color = NaturalTertiary
             )
@@ -1441,7 +1493,7 @@ fun LinksDirectoryView(
 
         // List Content
         if (links.isEmpty()) {
-            EmptyListPlaceholder()
+            EmptyListPlaceholder(language)
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -1480,7 +1532,9 @@ fun LinksDirectoryView(
                         onTap = {
                             onOpenUrl(linkItem.url)
                         },
-                        getDomain = getDomain
+                        onShare = { onShareLink(linkItem) },
+                        getDomain = getDomain,
+                        language = language
                     )
                 }
             }
@@ -1499,9 +1553,12 @@ fun SwipeableLinkItem(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onTap: () -> Unit,
-    getDomain: (String) -> String
+    onShare: () -> Unit,
+    getDomain: (String) -> String,
+    language: String
 ) {
     val density = LocalDensity.current
+    val t = { vi: String, en: String -> appText(language, vi, en) }
     val maxSwipeLeft = with(density) { -80.dp.toPx() }
     val maxSwipeRight = with(density) { 80.dp.toPx() }
 
@@ -1558,7 +1615,7 @@ fun SwipeableLinkItem(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit link", tint = Color(0xFF2E7D32))
-                    Text("Edit", fontSize = 11.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                    Text(t("Sửa", "Edit"), fontSize = 11.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -1577,7 +1634,7 @@ fun SwipeableLinkItem(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete link", tint = Color(0xFFC62828))
-                    Text("Delete", fontSize = 11.sp, color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                    Text(t("Xóa", "Delete"), fontSize = 11.sp, color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -1650,7 +1707,7 @@ fun SwipeableLinkItem(
                 Column(modifier = Modifier.weight(1.0f)) {
                     // Note at the very top
                     Text(
-                        text = if (link.note.isNotEmpty()) link.note else "Blank Note",
+                        text = if (link.note.isNotEmpty()) link.note else t("Chưa có ghi chú", "No note yet"),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = NaturalText,
@@ -1662,12 +1719,24 @@ fun SwipeableLinkItem(
 
                     // Domain and timestamp below
                     Text(
-                        text = "${getDomain(link.url)} • ${formatRelativeTime(link.timestamp)}",
+                        text = "${getDomain(link.url)} • ${formatRelativeTime(link.timestamp, language)}",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = NaturalTertiary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                IconButton(
+                    onClick = onShare,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Chia sẻ ghi chú",
+                        tint = NaturalSecondary,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -1676,8 +1745,9 @@ fun SwipeableLinkItem(
 }
 
 @Composable
-fun EmptyListPlaceholder() {
+fun EmptyListPlaceholder(language: String) {
     val colors = MaterialTheme.colorScheme
+    val t = { vi: String, en: String -> appText(language, vi, en) }
     val NaturalBg = colors.background
     val NaturalText = colors.onBackground
     val NaturalPrimary = colors.primary
@@ -1712,7 +1782,7 @@ fun EmptyListPlaceholder() {
         Spacer(modifier = Modifier.height(18.dp))
 
         Text(
-            text = "No Links Saved",
+            text = t("Chưa có liên kết", "No links saved"),
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
             color = NaturalText
@@ -1721,7 +1791,7 @@ fun EmptyListPlaceholder() {
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "Go ahead and share any browser URL, social post, or blog page from other apps to LinkVault. Tap + to save one manually so you can categorize it with unique notes!",
+            text = t("Chia sẻ URL, bài viết mạng xã hội hoặc trang web từ ứng dụng khác vào LinkVault. Bạn cũng có thể nhấn + để lưu thủ công và phân loại bằng ghi chú riêng.", "Share any browser URL, social post, or web page from other apps to LinkVault. Tap + to save one manually and organize it with notes."),
             fontSize = 13.sp,
             color = NaturalTertiary,
             textAlign = TextAlign.Center,
@@ -1740,10 +1810,14 @@ fun SettingsView(
     onThemeSelectionChange: (String) -> Unit,
     onLogout: () -> Unit,
     links: List<SavedLink>,
-    categories: List<com.example.data.Category>
+    categories: List<com.example.data.Category>,
+    language: String,
+    onLanguageChange: (String) -> Unit,
+    onImportLinks: (List<ImportedLinkDraft>) -> Unit
 ) {
     // Dynamic override
     val colors = MaterialTheme.colorScheme
+    val t = { vi: String, en: String -> appText(language, vi, en) }
     val NaturalBg = colors.background
     val NaturalText = colors.onBackground
     val NaturalPrimary = colors.primary
@@ -1764,7 +1838,7 @@ fun SettingsView(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "Settings",
+            text = t("Cài đặt", "Settings"),
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = NaturalText,
@@ -1800,7 +1874,7 @@ fun SettingsView(
 
                 Column(modifier = Modifier.weight(1.0f)) {
                     Text(
-                        text = "GOOGLE ACCOUNT",
+                        text = t("TÀI KHOẢN GOOGLE", "GOOGLE ACCOUNT"),
                         fontSize = 11.sp,
                         color = NaturalTertiary,
                         fontWeight = FontWeight.Bold
@@ -1822,7 +1896,70 @@ fun SettingsView(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     modifier = Modifier.height(36.dp)
                 ) {
-                    Text("Logout", color = Color(0xFFC62828), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(t("Đăng xuất", "Logout"), color = Color(0xFFC62828), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = colors.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, NaturalBorder)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = t("NGÔN NGỮ", "LANGUAGE"),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = NaturalPrimary,
+                    letterSpacing = 1.sp
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val isVietnameseActive = language != "en"
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isVietnameseActive) NaturalAccentChip else colors.surfaceVariant)
+                            .border(1.dp, if (isVietnameseActive) NaturalPrimary else NaturalBorder, RoundedCornerShape(10.dp))
+                            .clickable { onLanguageChange("vi") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Tiếng Việt",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isVietnameseActive) NaturalPrimary else NaturalTertiary
+                        )
+                    }
+
+                    val isEnglishActive = language == "en"
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isEnglishActive) NaturalAccentChip else colors.surfaceVariant)
+                            .border(1.dp, if (isEnglishActive) NaturalPrimary else NaturalBorder, RoundedCornerShape(10.dp))
+                            .clickable { onLanguageChange("en") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "English",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isEnglishActive) NaturalPrimary else NaturalTertiary
+                        )
+                    }
                 }
             }
         }
@@ -1839,7 +1976,7 @@ fun SettingsView(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "APPEARANCE MODE",
+                    text = t("CHẾ ĐỘ HIỂN THỊ", "APPEARANCE MODE"),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = NaturalPrimary,
@@ -1863,7 +2000,7 @@ fun SettingsView(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "Light Mode",
+                            t("Sáng", "Light"),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isLightActive) NaturalPrimary else NaturalTertiary
@@ -1883,7 +2020,7 @@ fun SettingsView(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "Dark Mode",
+                            t("Tối", "Dark"),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isDarkActive) NaturalPrimary else NaturalTertiary
@@ -1903,7 +2040,7 @@ fun SettingsView(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            "System",
+                            t("Theo máy", "System"),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isSystemActive) NaturalPrimary else NaturalTertiary
@@ -1925,7 +2062,7 @@ fun SettingsView(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "THEME STYLES",
+                    text = t("MÀU GIAO DIỆN", "THEME STYLES"),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = NaturalPrimary,
@@ -1989,7 +2126,34 @@ fun SettingsView(
 
         var showExportChoiceDialog by remember { mutableStateOf(false) }
         var showSavedSuccessDialog by remember { mutableStateOf(false) }
+        var importErrorMessage by remember { mutableStateOf<String?>(null) }
         var savedUri by remember { mutableStateOf<Uri?>(null) }
+
+        val csvImportLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        val csvText = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                            ?: throw IllegalArgumentException(t("Không thể đọc file CSV đã chọn.", "Could not read the selected CSV file."))
+                        when (val result = parseImportedCsv(csvText, categories)) {
+                            is CsvImportResult.Success -> withContext(Dispatchers.Main) {
+                                onImportLinks(result.rows)
+                                Toast.makeText(context, t("Đã nhập ${result.rows.size} ghi chú từ file CSV.", "Imported ${result.rows.size} notes from CSV."), Toast.LENGTH_LONG).show()
+                            }
+                            is CsvImportResult.Error -> withContext(Dispatchers.Main) {
+                                importErrorMessage = result.message
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            importErrorMessage = e.message ?: t("Không thể nhập file CSV.", "Could not import the CSV file.")
+                        }
+                    }
+                }
+            }
+        }
 
         val csvExportLauncher = rememberLauncherForActivityResult(
             contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv")
@@ -2004,11 +2168,11 @@ fun SettingsView(
                         withContext(Dispatchers.Main) {
                             savedUri = uri
                             showSavedSuccessDialog = true
-                            Toast.makeText(context, "Đã xuất dữ liệu thành công ra file CSV!", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, t("Đã xuất dữ liệu thành công ra file CSV!", "Data exported to CSV successfully."), Toast.LENGTH_LONG).show()
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Xuất file thất bại: ${e.message}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, t("Xuất file thất bại: ${e.message}", "Export failed: ${e.message}"), Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -2039,37 +2203,76 @@ fun SettingsView(
                     }
                     
                     withContext(Dispatchers.Main) {
-                        context.startActivity(Intent.createChooser(shareIntent, "Chia sẻ file CSV qua:"))
+                        context.startActivity(Intent.createChooser(shareIntent, t("Chia sẻ file CSV qua:", "Share CSV with:")))
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Chia sẻ thất bại: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, t("Chia sẻ thất bại: ${e.message}", "Sharing failed: ${e.message}"), Toast.LENGTH_LONG).show()
                     }
                 }
             }
         }
 
-        // Single Minimal "Export Data" Button (Không rườm rà mô tả)
-        Button(
-            onClick = {
-                showExportChoiceDialog = true
-            },
-            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("export_csv_button"),
-            colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
-            shape = RoundedCornerShape(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Save,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = Color.White
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Export Data (Xuất dữ liệu)",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+            Button(
+                onClick = { showExportChoiceDialog = true },
+                modifier = Modifier.weight(1f).height(48.dp).testTag("export_csv_button"),
+                colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Save,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = t("Xuất dữ liệu", "Export data"),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            Button(
+                onClick = { csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/*", "*/*")) },
+                modifier = Modifier.weight(1f).height(48.dp).testTag("import_csv_button"),
+                colors = ButtonDefaults.buttonColors(containerColor = NaturalSecondary),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.UploadFile,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = t("Nhập dữ liệu", "Import data"),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+
+        if (importErrorMessage != null) {
+            AlertDialog(
+                onDismissRequest = { importErrorMessage = null },
+                title = { Text(t("Không thể nhập CSV", "Could not import CSV"), fontWeight = FontWeight.Bold, color = NaturalText) },
+                text = { Text(importErrorMessage.orEmpty(), color = NaturalSecondary) },
+                confirmButton = {
+                    Button(
+                        onClick = { importErrorMessage = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
+                    ) {
+                        Text(t("Đã hiểu", "Got it"), color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
             )
         }
 
@@ -2077,8 +2280,8 @@ fun SettingsView(
         if (showExportChoiceDialog) {
             AlertDialog(
                 onDismissRequest = { showExportChoiceDialog = false },
-                title = { Text("Export Data (Xuất dữ liệu)", fontWeight = FontWeight.Bold, color = NaturalText) },
-                text = { Text("Bạn muốn lưu tệp CSV về máy hay chia sẻ trực tiếp qua ứng dụng khác?", color = NaturalSecondary) },
+                title = { Text(t("Xuất dữ liệu", "Export data"), fontWeight = FontWeight.Bold, color = NaturalText) },
+                text = { Text(t("Bạn muốn lưu tệp CSV về máy hay chia sẻ trực tiếp qua ứng dụng khác?", "Do you want to save the CSV file to this device or share it directly?"), color = NaturalSecondary) },
                 confirmButton = {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2097,7 +2300,7 @@ fun SettingsView(
                         ) {
                             Icon(Icons.Default.Save, null, tint = Color.White, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Lưu về máy (Save)", color = Color.White, fontSize = 12.sp)
+                            Text(t("Lưu về máy", "Save"), color = Color.White, fontSize = 12.sp)
                         }
 
                         // Option Share
@@ -2113,13 +2316,13 @@ fun SettingsView(
                         ) {
                             Icon(Icons.Default.Share, null, tint = Color.White, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Chia sẻ (Share)", color = Color.White, fontSize = 12.sp)
+                            Text(t("Chia sẻ", "Share"), color = Color.White, fontSize = 12.sp)
                         }
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showExportChoiceDialog = false }) {
-                        Text("Hủy", color = NaturalTertiary)
+                        Text(t("Hủy", "Cancel"), color = NaturalTertiary)
                     }
                 }
             )
@@ -2129,8 +2332,8 @@ fun SettingsView(
         if (showSavedSuccessDialog && savedUri != null) {
             AlertDialog(
                 onDismissRequest = { showSavedSuccessDialog = false },
-                title = { Text("Xuất tệp thành công!", fontWeight = FontWeight.Bold, color = NaturalText) },
-                text = { Text("Dữ liệu của bạn đã được xuất ra định dạng CSV và lưu vào thiết bị dưới tên tệp bạn đã chọn. Bạn có muốn mở xem ngay lập tức?", color = NaturalSecondary) },
+                title = { Text(t("Xuất tệp thành công!", "Export complete"), fontWeight = FontWeight.Bold, color = NaturalText) },
+                text = { Text(t("Dữ liệu của bạn đã được xuất ra định dạng CSV và lưu vào thiết bị dưới tên tệp bạn đã chọn. Bạn có muốn mở xem ngay lập tức?", "Your data was exported as a CSV file and saved to this device. Do you want to open it now?"), color = NaturalSecondary) },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -2141,19 +2344,19 @@ fun SettingsView(
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
-                                context.startActivity(Intent.createChooser(openIntent, "Mở file CSV bằng:"))
+                                context.startActivity(Intent.createChooser(openIntent, t("Mở file CSV bằng:", "Open CSV with:")))
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Không thể mở file tự động. Bạn có thể tự tìm kiếm file trong thư mục Downloads của máy.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, t("Không thể mở file tự động. Bạn có thể tự tìm kiếm file trong thư mục Downloads của máy.", "Could not open the file automatically. You can find it in your Downloads folder."), Toast.LENGTH_LONG).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
                     ) {
-                        Text("Mở tệp ngay", color = Color.White)
+                        Text(t("Mở tệp ngay", "Open now"), color = Color.White)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showSavedSuccessDialog = false }) {
-                        Text("Để sau", color = NaturalTertiary)
+                        Text(t("Để sau", "Later"), color = NaturalTertiary)
                     }
                 }
             )
@@ -2190,14 +2393,14 @@ fun SettingsView(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "USER GUIDE",
+                        text = t("HƯỚNG DẪN SỬ DỤNG", "USER GUIDE"),
                         fontSize = 11.sp,
                         color = NaturalPrimary,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "Learn how to use gestures to manage links",
+                        text = t("Các thao tác nhanh để quản lý ghi chú và liên kết", "Quick actions for managing notes and links"),
                         fontSize = 13.sp,
                         color = NaturalTertiary
                     )
@@ -2221,7 +2424,7 @@ fun SettingsView(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(Icons.Default.MenuBook, null, tint = NaturalPrimary)
-                    Text("User Guide", fontWeight = FontWeight.Bold, color = NaturalText)
+                    Text(t("Hướng dẫn sử dụng", "User guide"), fontWeight = FontWeight.Bold, color = NaturalText)
                 }
             },
             text = {
@@ -2230,7 +2433,7 @@ fun SettingsView(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text(
-                        "LinkVault is designed with intuitive gestures to help you manage your links incredibly fast:",
+                        t("LinkVault giúp bạn lưu, tìm kiếm và chia sẻ các liên kết quan trọng bằng những thao tác đơn giản:", "LinkVault helps you save, find, and share important links with simple gestures:"),
                         fontSize = 14.sp,
                         color = NaturalText
                     )
@@ -2253,8 +2456,8 @@ fun SettingsView(
                             Icon(Icons.Default.Edit, null, tint = NaturalPrimary, modifier = Modifier.size(18.dp))
                         }
                         Column {
-                            Text("Swipe Right", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NaturalText)
-                            Text("Edit and update notes", fontSize = 12.sp, color = NaturalTertiary)
+                            Text(t("Vuốt sang phải", "Swipe right"), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NaturalText)
+                            Text(t("Sửa và cập nhật ghi chú", "Edit and update a note"), fontSize = 12.sp, color = NaturalTertiary)
                         }
                     }
 
@@ -2276,8 +2479,8 @@ fun SettingsView(
                             Icon(Icons.Default.Delete, null, tint = Color(0xFFC62828), modifier = Modifier.size(18.dp))
                         }
                         Column {
-                            Text("Swipe Left", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NaturalText)
-                            Text("Fast deletion of notes & categories", fontSize = 12.sp, color = NaturalTertiary)
+                            Text(t("Vuốt sang trái", "Swipe left"), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NaturalText)
+                            Text(t("Xóa nhanh ghi chú không còn cần thiết", "Quickly delete notes you no longer need"), fontSize = 12.sp, color = NaturalTertiary)
                         }
                     }
 
@@ -2299,8 +2502,30 @@ fun SettingsView(
                             Icon(Icons.Default.CheckCircle, null, tint = NaturalPrimary, modifier = Modifier.size(18.dp))
                         }
                         Column {
-                            Text("Long Press", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NaturalText)
-                            Text("Select multiple notes to bulk delete or move", fontSize = 12.sp, color = NaturalTertiary)
+                            Text(t("Nhấn giữ", "Long press"), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NaturalText)
+                            Text(t("Chọn nhiều ghi chú để xóa hàng loạt", "Select multiple notes for bulk delete"), fontSize = 12.sp, color = NaturalTertiary)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(colors.surfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(colors.primaryContainer, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Share, null, tint = NaturalPrimary, modifier = Modifier.size(18.dp))
+                        }
+                        Column {
+                            Text(t("Chia sẻ", "Share"), fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NaturalText)
+                            Text(t("Nhấn biểu tượng chia sẻ ở từng ghi chú để gửi sang ứng dụng khác", "Tap the share icon on a note to send it to another app"), fontSize = 12.sp, color = NaturalTertiary)
                         }
                     }
                 }
@@ -2310,7 +2535,7 @@ fun SettingsView(
                     onClick = { showUserGuideDialog = false },
                     colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
                 ) {
-                    Text("Got It", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Đã hiểu", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -2360,6 +2585,19 @@ fun RowScope.ThemeColorItem(
 }
 
 // Utility: parse URL links from raw block strings securely using broad match
+fun shareLinkItem(context: Context, link: SavedLink, language: String) {
+    val shareText = if (link.note.isNotBlank()) {
+        "${link.note}\n\n${link.url}"
+    } else {
+        link.url
+    }
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    context.startActivity(Intent.createChooser(shareIntent, appText(language, "Chia sẻ ghi chú qua:", "Share note with:")))
+}
+
 fun extractUrl(text: String): String {
     val regex = "https?://[^\\s]+".toRegex()
     val match = regex.find(text)
@@ -2372,29 +2610,6 @@ fun extractUrl(text: String): String {
         return url
     }
     return text.trim()
-}
-
-// Relative date converter returning user-friendly descriptions
-fun formatRelativeTime(timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-    val seconds = diff / 1000
-    val minutes = seconds / 60
-    val hours = minutes / 60
-    val days = hours / 24
-
-    return when {
-        diff < 0 -> "Just now"
-        seconds < 60 -> "Just now"
-        minutes < 60 -> "${minutes}m ago"
-        hours < 24 -> "${hours}h ago"
-        days == 1L -> "Yesterday"
-        days < 7 -> "${days}d ago"
-        else -> {
-            val sdf = java.text.SimpleDateFormat("MMM dd", java.util.Locale.getDefault())
-            sdf.format(java.util.Date(timestamp))
-        }
-    }
 }
 
 // ==========================================
@@ -2645,11 +2860,13 @@ fun DashedBox(
 @Composable
 fun CategoriesDirectoryView(
     categories: List<com.example.data.Category>,
+    language: String,
     onCategoryClick: (com.example.data.Category) -> Unit,
     onAddCategory: () -> Unit,
     onReorder: (from: Int, to: Int) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val t = { vi: String, en: String -> appText(language, vi, en) }
     val NaturalBg = colors.background
     val NaturalText = colors.onBackground
     val NaturalPrimary = colors.primary
@@ -2663,7 +2880,7 @@ fun CategoriesDirectoryView(
             .padding(16.dp)
     ) {
         Text(
-            text = "Categories",
+            text = t("Danh mục", "Categories"),
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = NaturalText,
@@ -2681,6 +2898,7 @@ fun CategoriesDirectoryView(
         ) {
             CategoriesGrid(
                 categories = categories,
+                language = language,
                 onCategoryClick = onCategoryClick,
                 onAddClick = onAddCategory,
                 onReorder = onReorder
@@ -2692,10 +2910,12 @@ fun CategoriesDirectoryView(
 @Composable
 fun CategoriesGrid(
     categories: List<com.example.data.Category>,
+    language: String,
     onCategoryClick: (com.example.data.Category) -> Unit,
     onAddClick: () -> Unit,
     onReorder: (from: Int, to: Int) -> Unit
 ) {
+    val t = { vi: String, en: String -> appText(language, vi, en) }
     val totalSlots = 12
     val cols = 3
     val totalNeeded = if (categories.size + 1 > totalSlots) categories.size + 1 else totalSlots
@@ -2846,7 +3066,7 @@ fun CategoriesGrid(
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "New",
+                                        text = t("Mới", "New"),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
@@ -2881,9 +3101,12 @@ fun CategoryDetailsView(
     onEditLink: (SavedLink) -> Unit,
     onDeleteLink: (SavedLink) -> Unit,
     onOpenUrl: (String) -> Unit,
+    onShareLink: (SavedLink) -> Unit,
+    language: String,
     onPickGalleryLogo: (((String) -> Unit) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val t = { vi: String, en: String -> appText(language, vi, en) }
     val colors = MaterialTheme.colorScheme
     val NaturalBg = colors.background
     val NaturalText = colors.onBackground
@@ -2925,7 +3148,7 @@ fun CategoryDetailsView(
                 onClick = onBack,
                 modifier = Modifier.size(44.dp)
             ) {
-                Icon(Icons.Default.ArrowBack, "Go back", tint = NaturalText)
+                Icon(Icons.Default.ArrowBack, t("Quay lại", "Go back"), tint = NaturalText)
             }
 
             CategoryLogoDisplay(
@@ -2964,7 +3187,7 @@ fun CategoryDetailsView(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Notes",
+                    text = t("Ghi chú", "Notes"),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (detailTab == "notes") NaturalText else NaturalTertiary
@@ -2981,7 +3204,7 @@ fun CategoryDetailsView(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Settings",
+                    text = t("Cài đặt", "Settings"),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (detailTab == "settings") NaturalText else NaturalTertiary
@@ -3003,7 +3226,7 @@ fun CategoryDetailsView(
                 OutlinedTextField(
                     value = notesSearchText,
                     onValueChange = { notesSearchText = it },
-                    placeholder = { Text("Search assigned notes...", color = NaturalTertiary) },
+                    placeholder = { Text(searchPlaceholder(language), color = NaturalTertiary) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 12.dp)
@@ -3031,7 +3254,7 @@ fun CategoryDetailsView(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No notes assigned to this category.",
+                            text = t("Chưa có ghi chú nào trong danh mục này.", "No notes in this category yet."),
                             fontSize = 13.sp,
                             color = NaturalTertiary,
                             textAlign = TextAlign.Center
@@ -3055,7 +3278,9 @@ fun CategoryDetailsView(
                                 onEdit = { onEditLink(link) },
                                 onDelete = { onDeleteLink(link) },
                                 onTap = { onOpenUrl(link.url) },
-                                getDomain = { viewModel.getDomainName(it) }
+                                onShare = { onShareLink(link) },
+                                getDomain = { viewModel.getDomainName(it) },
+                                language = language
                             )
                         }
                     }
@@ -3072,7 +3297,7 @@ fun CategoryDetailsView(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "Category Name",
+                        text = t("Tên danh mục", "Category name"),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = NaturalSecondary
@@ -3097,7 +3322,7 @@ fun CategoryDetailsView(
                 // Logo field with change trigger
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "Category Icon (Minimalist)",
+                        text = t("Biểu tượng danh mục", "Category icon"),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = NaturalSecondary
@@ -3137,7 +3362,7 @@ fun CategoryDetailsView(
                                 )
                             }
                             Text(
-                                text = "Change",
+                                text = t("Thay đổi", "Change"),
                                 fontSize = 12.sp,
                                 color = NaturalPrimary,
                                 fontWeight = FontWeight.Bold
@@ -3165,17 +3390,17 @@ fun CategoryDetailsView(
                     ) {
                         Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFC62828))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Delete", color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                        Text("Xóa", color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
                     }
 
                     Button(
                         onClick = {
                             if (editName.isBlank()) {
-                                Toast.makeText(context, "Category name cannot be empty.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, t("Tên danh mục không được để trống.", "Category name cannot be empty."), Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
                             viewModel.updateCategory(category.copy(name = editName, logo = editLogo))
-                            Toast.makeText(context, "Category updated successfully!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, t("Đã cập nhật danh mục.", "Category updated."), Toast.LENGTH_SHORT).show()
                             onBack()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
@@ -3185,7 +3410,7 @@ fun CategoryDetailsView(
                             .height(48.dp)
                             .testTag("save_category_button")
                     ) {
-                        Text("Save Changes", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(t("Lưu thay đổi", "Save changes"), color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -3196,7 +3421,7 @@ fun CategoryDetailsView(
     if (showLogoPicker) {
         AlertDialog(
             onDismissRequest = { showLogoPicker = false },
-            title = { Text("Select Minimalism Logo", fontWeight = FontWeight.Bold, color = NaturalText) },
+            title = { Text(t("Chọn biểu tượng", "Select icon"), fontWeight = FontWeight.Bold, color = NaturalText) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -3218,7 +3443,7 @@ fun CategoryDetailsView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Default.PhotoLibrary, null, tint = NaturalPrimary)
-                            Text("Choose from Gallery", color = NaturalPrimary, fontWeight = FontWeight.SemiBold)
+                            Text(t("Chọn từ thư viện", "Choose from Gallery"), color = NaturalPrimary, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
@@ -3293,8 +3518,8 @@ fun CategoryDetailsView(
     if (showDeleteConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
-            title = { Text("Delete Category?", color = NaturalText, fontWeight = FontWeight.Bold) },
-            text = { Text("Choose how you want to handle the links assigned to this category:", color = NaturalTertiary) },
+            title = { Text(t("Xóa danh mục?", "Delete category?"), color = NaturalText, fontWeight = FontWeight.Bold) },
+            text = { Text(t("Chọn cách xử lý các ghi chú đang thuộc danh mục này:", "Choose what to do with notes in this category:"), color = NaturalTertiary) },
             confirmButton = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -3305,33 +3530,33 @@ fun CategoryDetailsView(
                         onClick = {
                             showDeleteConfirmDialog = false
                             viewModel.deleteCategoryOnly(category)
-                            Toast.makeText(context, "Deleted category successfully (Notes preserved).", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, t("Đã xóa danh mục và giữ lại ghi chú.", "Deleted category and kept notes."), Toast.LENGTH_SHORT).show()
                             onBack()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = NaturalSecondary),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Delete Category Only", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(t("Chỉ xóa danh mục", "Delete category only"), color = Color.White, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
                         onClick = {
                             showDeleteConfirmDialog = false
                             viewModel.deleteCategoryAndAllContent(category)
-                            Toast.makeText(context, "Deleted category and associated content successfully.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, t("Đã xóa danh mục và toàn bộ ghi chú liên quan.", "Deleted category and all related notes."), Toast.LENGTH_SHORT).show()
                             onBack()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Delete Category & All Content", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(t("Xóa danh mục và toàn bộ ghi chú", "Delete category and all notes"), color = Color.White, fontWeight = FontWeight.Bold)
                     }
 
                     TextButton(
                         onClick = { showDeleteConfirmDialog = false },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Cancel", color = NaturalPrimary, textAlign = TextAlign.Center)
+                        Text(t("Hủy", "Cancel"), color = NaturalPrimary, textAlign = TextAlign.Center)
                     }
                 }
             },
@@ -3386,4 +3611,94 @@ fun escapeCsvField(field: String): String {
     }
 }
 
+sealed class CsvImportResult {
+    data class Success(val rows: List<ImportedLinkDraft>) : CsvImportResult()
+    data class Error(val message: String) : CsvImportResult()
+}
+
+fun parseImportedCsv(
+    csvText: String,
+    categories: List<com.example.data.Category>
+): CsvImportResult {
+    val rows = parseCsvRows(csvText.removePrefix("﻿"))
+    if (rows.isEmpty()) {
+        return CsvImportResult.Error("File CSV đang trống.")
+    }
+
+    val header = rows.first().map { it.trim().removePrefix("﻿") }
+    if (header != listOf("Link", "Note", "Category")) {
+        return CsvImportResult.Error("File CSV sai định dạng. Dòng đầu tiên phải là: Link,Note,Category")
+    }
+
+    val importedRows = mutableListOf<ImportedLinkDraft>()
+    rows.drop(1).forEachIndexed { index, row ->
+        if (row.size != 3) {
+            return CsvImportResult.Error("Dòng ${index + 2} không đúng 3 cột Link, Note, Category.")
+        }
+        val url = row[0].trim()
+        if (url.isBlank()) {
+            return CsvImportResult.Error("Dòng ${index + 2} thiếu đường dẫn.")
+        }
+        val categoryName = row[2].trim()
+        val categoryId = categories.firstOrNull { it.name.equals(categoryName, ignoreCase = true) }?.id ?: 0
+        importedRows += ImportedLinkDraft(
+            url = url,
+            note = row[1],
+            categoryId = categoryId
+        )
+    }
+
+    if (importedRows.isEmpty()) {
+        return CsvImportResult.Error("File CSV không có dữ liệu để nhập.")
+    }
+
+    return CsvImportResult.Success(importedRows)
+}
+
+fun parseCsvRows(csvText: String): List<List<String>> {
+    val rows = mutableListOf<List<String>>()
+    val currentRow = mutableListOf<String>()
+    val currentField = StringBuilder()
+    var inQuotes = false
+    var index = 0
+
+    while (index < csvText.length) {
+        val char = csvText[index]
+        when {
+            char == '"' && inQuotes && index + 1 < csvText.length && csvText[index + 1] == '"' -> {
+                currentField.append('"')
+                index++
+            }
+            char == '"' -> inQuotes = !inQuotes
+            char == ',' && !inQuotes -> {
+                currentRow += currentField.toString()
+                currentField.clear()
+            }
+            (char == '\n' || char == '\r') && !inQuotes -> {
+                currentRow += currentField.toString()
+                currentField.clear()
+                if (currentRow.any { it.isNotEmpty() }) {
+                    rows += currentRow.toList()
+                }
+                currentRow.clear()
+                if (char == '\r' && index + 1 < csvText.length && csvText[index + 1] == '\n') {
+                    index++
+                }
+            }
+            else -> currentField.append(char)
+        }
+        index++
+    }
+
+    if (inQuotes) {
+        throw IllegalArgumentException("File CSV có dấu ngoặc kép chưa được đóng.")
+    }
+
+    currentRow += currentField.toString()
+    if (currentRow.any { it.isNotEmpty() }) {
+        rows += currentRow.toList()
+    }
+
+    return rows
+}
 

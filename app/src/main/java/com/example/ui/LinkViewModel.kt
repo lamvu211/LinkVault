@@ -8,6 +8,12 @@ import com.example.data.LinkRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
+data class ImportedLinkDraft(
+    val url: String,
+    val note: String,
+    val categoryId: Int
+)
+
 enum class SortOrder {
     RECENT,
     TITLE,
@@ -162,18 +168,16 @@ class LinkViewModel(private val repository: LinkRepository) : ViewModel() {
 
     fun saveLink(title: String, url: String, note: String, tags: List<String>, categoryId: Int = 0) {
         viewModelScope.launch {
-            val linkTitle = title.trim().ifBlank { getDisplayTitle(url) }
             val tagsString = tags.map { it.trim() }.filter { it.isNotEmpty() }.joinToString(",")
-            val cleanUrl = formatUrl(url)
-            repository.insertLink(
-                SavedLink(
-                    url = cleanUrl,
-                    title = linkTitle,
-                    note = note.trim(),
-                    tags = tagsString,
-                    categoryId = categoryId
-                )
-            )
+            repository.insertLink(createSavedLink(title, url, note, tagsString, categoryId))
+        }
+    }
+
+    fun importLinks(rows: List<ImportedLinkDraft>) {
+        viewModelScope.launch {
+            rows.forEach { row ->
+                repository.insertLink(createSavedLink("", row.url, row.note, "", row.categoryId))
+            }
         }
     }
 
@@ -205,6 +209,18 @@ class LinkViewModel(private val repository: LinkRepository) : ViewModel() {
     private fun getDisplayTitle(url: String): String {
         val domain = getDomainName(url)
         return "Saved Link from $domain"
+    }
+
+    private fun createSavedLink(title: String, url: String, note: String, tags: String, categoryId: Int): SavedLink {
+        val cleanUrl = formatUrl(url)
+        val linkTitle = title.trim().ifBlank { getDisplayTitle(cleanUrl) }
+        return SavedLink(
+            url = cleanUrl,
+            title = linkTitle,
+            note = note.trim(),
+            tags = tags,
+            categoryId = categoryId
+        )
     }
 
     private fun formatUrl(url: String): String {

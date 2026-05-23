@@ -29,8 +29,11 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun LoginScreen(
+    language: String,
     onLoginSuccess: (String) -> Unit
 ) {
+    val t = { vi: String, en: String -> if (language == "en") en else vi }
+
     // Dynamic theme colors mirroring MaterialTheme
     val colorScheme = MaterialTheme.colorScheme
     val NaturalBg = colorScheme.background
@@ -47,10 +50,10 @@ fun LoginScreen(
             if (accountName != null) {
                 onLoginSuccess(accountName)
             } else {
-                Toast.makeText(context, "Could not get account name", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, t("Không thể lấy tên tài khoản", "Could not get account name"), Toast.LENGTH_SHORT).show()
             }
         } else {
-             Toast.makeText(context, "Sign in cancelled", Toast.LENGTH_SHORT).show()
+             Toast.makeText(context, t("Đã hủy đăng nhập", "Sign in cancelled"), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -98,7 +101,7 @@ fun LoginScreen(
 
             // Subtitle description
             Text(
-                text = "Keep your shared social feeds and URLs organized in one safe space.",
+                text = t("Lưu các liên kết và nội dung bạn chia sẻ vào một nơi an toàn.", "Keep your shared social feeds and URLs organized in one safe space."),
                 fontSize = 14.sp,
                 color = NaturalTertiary,
                 textAlign = TextAlign.Center,
@@ -149,7 +152,7 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Text(
-                        text = "Sign in with Google",
+                        text = t("Đăng nhập bằng Google", "Sign in with Google"),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF3C4043)
@@ -160,7 +163,7 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Secure Google accounts authentication required to access LinkVault features.",
+                text = t("Cần đăng nhập Google để sử dụng các tính năng của LinkVault.", "Google account authentication is required to access LinkVault features."),
                 fontSize = 11.sp,
                 color = NaturalTertiary,
                 textAlign = TextAlign.Center,

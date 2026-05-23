@@ -15,6 +15,7 @@
 .cxx
 local.properties
 .env
+.env*
 debug.keystore
 *.keystore
 *.jks
@@ -25,3 +26,5 @@ debug.keystore
 *.aab
 .build-outputs/
 firebase-applet-config.json
+CLAUDE.md
+CHANGELOG.md
