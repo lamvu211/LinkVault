@@ -1,70 +1,70 @@
 # LinkVault
 
-**Save useful links, organize them with notes, and find them again fast.**
+**Lưu các liên kết hữu ích, sắp xếp bằng ghi chú và tìm lại nhanh khi cần.**
 
-LinkVault is a local-first Android app for collecting links from browsers, social apps, chats, and anywhere Android sharing works. It keeps saved URLs, notes, categories, and visual organization in one focused place so useful content does not get lost in messages, browser tabs, or temporary notes.
+LinkVault là ứng dụng Android ưu tiên lưu trữ cục bộ, dùng để gom các liên kết từ trình duyệt, mạng xã hội, ứng dụng chat và mọi nơi hỗ trợ chia sẻ của Android. Ứng dụng giúp bạn lưu URL, ghi chú, danh mục và cách tổ chức trực quan trong một nơi tập trung, tránh thất lạc nội dung quan trọng trong tin nhắn, tab trình duyệt hoặc các ghi chú tạm thời.
 
-## Highlights
+## Điểm nổi bật
 
-- **Fast link capture** — add links manually or share text/URLs into LinkVault from other Android apps.
-- **Notes-first organization** — attach short notes, choose categories, and edit saved items quickly.
-- **Visual categories** — create categories with built-in icons or custom images from your gallery.
-- **Search everywhere** — search saved links from the main list or inside a category.
-- **Per-note sharing** — share any saved note/link back to other apps.
-- **CSV import and export** — back up your vault or move data with `Link,Note,Category` CSV files.
-- **Vietnamese and English UI** — switch language directly in Settings.
-- **Personal themes** — choose Light, Dark, or System mode and six color styles: Denim Cool, Forest Jade, Blossom Rose, Peach Amber, Lavender Mist, and Teal Breeze.
-- **Update check** — check the latest public GitHub Release from Settings and open the APK download page when a newer version is available.
+- **Lưu liên kết nhanh** — thêm thủ công hoặc chia sẻ văn bản/URL vào LinkVault từ ứng dụng Android khác.
+- **Tổ chức theo ghi chú** — thêm ghi chú ngắn, chọn danh mục và chỉnh sửa mục đã lưu nhanh chóng.
+- **Danh mục trực quan** — tạo danh mục với icon có sẵn hoặc ảnh tùy chỉnh từ thư viện.
+- **Tìm kiếm ở nhiều nơi** — tìm liên kết trong danh sách chính hoặc trong từng danh mục.
+- **Chia sẻ từng ghi chú** — gửi lại bất kỳ ghi chú/liên kết đã lưu sang ứng dụng khác.
+- **Nhập và xuất CSV** — sao lưu hoặc di chuyển dữ liệu bằng file CSV theo định dạng `Link,Note,Category`.
+- **Giao diện tiếng Việt và tiếng Anh** — chuyển ngôn ngữ trực tiếp trong phần Cài đặt.
+- **Cá nhân hóa giao diện** — chọn chế độ Sáng, Tối hoặc Theo máy, kèm 6 bảng màu: Denim Cool, Forest Jade, Blossom Rose, Peach Amber, Lavender Mist và Teal Breeze.
+- **Kiểm tra cập nhật** — kiểm tra GitHub Release mới nhất trong Cài đặt và mở trang tải APK khi có phiên bản mới.
 
-## App Screens
+## Màn hình ứng dụng
 
-| Links | Categories | Settings |
+| Liên kết | Danh mục | Cài đặt |
 | --- | --- | --- |
-| <img src="docs/screenshots/Links.jpg" alt="Links screen" width="260" /> | <img src="docs/screenshots/Categories.jpg" alt="Categories screen" width="260" /> | <img src="docs/screenshots/Settings.jpg" alt="Settings screen" width="260" /> |
+| <img src="docs/screenshots/Links.jpg" alt="Màn hình Liên kết" width="260" /> | <img src="docs/screenshots/Categories.jpg" alt="Màn hình Danh mục" width="260" /> | <img src="docs/screenshots/Settings.jpg" alt="Màn hình Cài đặt" width="260" /> |
 
-## Main Flows
+## Luồng chính
 
-### Links
+### Liên kết
 
-Save a URL with a note and category, then open, edit, delete, or share it from the list. The add/edit popup is designed for mobile keyboards and keeps category selection accessible while typing.
+Lưu URL kèm ghi chú và danh mục, sau đó mở, sửa, xóa hoặc chia sẻ ngay từ danh sách. Popup thêm/sửa được tối ưu cho bàn phím di động và vẫn giữ phần chọn danh mục dễ thao tác khi đang nhập.
 
-### Categories
+### Danh mục
 
-Create visual categories, choose a localized default icon or crop a custom gallery image, and reorder categories by drag and drop. Category detail screens include their own search and the same link actions as the main list.
+Tạo danh mục trực quan, chọn icon mặc định đã bản địa hóa hoặc cắt ảnh tùy chỉnh từ thư viện, rồi kéo thả để sắp xếp lại thứ tự danh mục. Màn hình chi tiết danh mục có tìm kiếm riêng và các thao tác liên kết giống danh sách chính.
 
-### Settings
+### Cài đặt
 
-Switch language, appearance mode, and color theme. Import or export CSV files, open the user guide, log out, or check for a newer GitHub Release.
+Chuyển ngôn ngữ, chế độ hiển thị và bảng màu giao diện. Người dùng có thể nhập/xuất CSV, mở hướng dẫn sử dụng, đăng xuất hoặc kiểm tra GitHub Release mới hơn.
 
-## Data and Privacy
+## Dữ liệu và quyền riêng tư
 
-LinkVault stores data locally on the device using Room. Each signed-in Google account gets its own local vault. CSV import/export is user initiated, and generated APKs, keystores, `.env` files, and other sensitive artifacts should stay out of git.
+LinkVault lưu dữ liệu cục bộ trên thiết bị bằng Room. Mỗi tài khoản Google đã đăng nhập có một kho dữ liệu riêng trên máy. Việc nhập/xuất CSV chỉ diễn ra khi người dùng chủ động thực hiện. Các file APK sinh ra, keystore, file `.env` và những artifact nhạy cảm khác không nên được đưa vào git.
 
-## Built With
+## Công nghệ sử dụng
 
 - Kotlin
 - Jetpack Compose
 - Material 3
 - Room local database
-- Kotlin Coroutines and Flow
+- Kotlin Coroutines và Flow
 - Google account picker
-- OkHttp for public GitHub Release checks
+- OkHttp để kiểm tra GitHub Release công khai
 
-## Development
+## Phát triển
 
-Open the project in Android Studio, sync Gradle dependencies, then run the `app` configuration on an emulator or Android device.
+Mở dự án bằng Android Studio, đồng bộ Gradle dependencies, sau đó chạy cấu hình `app` trên emulator hoặc thiết bị Android thật.
 
-Common commands:
+Một số lệnh thường dùng:
 
-| Command | Description |
+| Lệnh | Mô tả |
 | --- | --- |
-| `gradle :app:assembleDebug` | Build a debug APK |
-| `gradle :app:testDebugUnitTest` | Run local unit tests |
-| `gradle :app:assembleRelease` | Build the signed release APK when release signing env vars are configured |
+| `gradle :app:assembleDebug` | Build APK debug |
+| `gradle :app:testDebugUnitTest` | Chạy unit test cục bộ |
+| `gradle :app:assembleRelease` | Build APK release đã ký khi biến môi trường ký release được cấu hình |
 
-## Current App Details
+## Thông tin ứng dụng hiện tại
 
-- App name: **LinkVault**
-- Current release: **0.6**
+- Tên ứng dụng: **LinkVault**
+- Bản phát hành hiện tại: **0.6**
 - Minimum SDK: **24**
 - Target SDK: **36**
