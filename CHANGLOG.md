@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6 - 2026-05-23
+
+- Added the Teal Breeze theme and completed the Theme Styles grid as a balanced 3x2 layout.
+- Localized category icon display names in Vietnamese and English.
+- Reworked category icon selection into a full-screen popup that avoids the status bar and shows all default icons without scrolling.
+- Improved category icon labels so names can wrap across two lines without overlap or truncation.
+- Updated release metadata to versionCode 6 and versionName 0.6.
+
 ## 0.4 - 2026-05-23
 
 - Added a Settings button to check the latest public GitHub Release and open the APK download page when an update is available.

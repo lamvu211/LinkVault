@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.linkvault.lxkqpz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 4
-    versionName = "0.4"
+    versionCode = 6
+    versionName = "0.6"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

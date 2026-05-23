@@ -1135,7 +1135,7 @@ fun MainAppScreen(
                                             modifier = Modifier.size(20.dp)
                                         )
                                         Text(
-                                            text = LOGO_DISPLAY_NAMES[categoryDraftLogo] ?: "Default Icon",
+                                            text = logoDisplayName(categoryDraftLogo, language),
                                             fontSize = 14.sp,
                                             color = NaturalText,
                                             fontWeight = FontWeight.Medium
@@ -1191,97 +1191,19 @@ fun MainAppScreen(
             }
 
             if (showLogoLibraryDialog) {
-                AlertDialog(
-                    onDismissRequest = { showLogoLibraryDialog = false },
-                    title = { Text(t("Chọn biểu tượng", "Choose icon"), fontWeight = FontWeight.Bold, color = NaturalText) },
-                    text = {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    triggerGalleryPicker { savedPath ->
-                                        categoryDraftLogo = savedPath
-                                        showLogoLibraryDialog = false
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, NaturalPrimary)
-                            ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.PhotoLibrary, null, tint = NaturalPrimary)
-                                    Text(t("Chọn từ thư viện", "Choose from Gallery"), color = NaturalPrimary, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-
-                            Text(
-                                t("Hoặc chọn biểu tượng có sẵn:", "Or select a standard icon:"),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = NaturalSecondary
-                            )
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(240.dp)
-                            ) {
-                                val logosList = CATEGORY_LOGOS.keys.toList()
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                val rowCount = (logosList.size + 3) / 4
-                                items(rowCount) { rowIndex ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        for (colIndex in 0 until 4) {
-                                            val logIndex = rowIndex * 4 + colIndex
-                                            val logoKey = logosList.getOrNull(logIndex)
-                                            if (logoKey != null) {
-                                                val optIcon = CATEGORY_LOGOS[logoKey] ?: Icons.Default.List
-                                                val isChosen = categoryDraftLogo == logoKey
-                                                Box(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .aspectRatio(1f)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(if (isChosen) NaturalAccentChip else colors.surfaceVariant)
-                                                        .border(1.dp, if (isChosen) NaturalPrimary else Color.Transparent, RoundedCornerShape(8.dp))
-                                                        .clickable {
-                                                            categoryDraftLogo = logoKey
-                                                            showLogoLibraryDialog = false
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                        Icon(optIcon, null, tint = if (isChosen) NaturalPrimary else NaturalSecondary, modifier = Modifier.size(24.dp))
-                                                        Spacer(modifier = Modifier.height(2.dp))
-                                                        Text(LOGO_DISPLAY_NAMES[logoKey]?.take(6) ?: "Logo", fontSize = 8.sp, color = NaturalTertiary, maxLines = 1)
-                                                    }
-                                                }
-                                            } else {
-                                                Box(modifier = Modifier.weight(1f))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                CategoryIconPickerDialog(
+                    language = language,
+                    selectedLogo = categoryDraftLogo,
+                    onDismiss = { showLogoLibraryDialog = false },
+                    onPickGalleryLogo = {
+                        triggerGalleryPicker { savedPath ->
+                            categoryDraftLogo = savedPath
+                            showLogoLibraryDialog = false
                         }
-                    }
-                },
-                    confirmButton = {},
-                    dismissButton = {
-                        TextButton(onClick = { showLogoLibraryDialog = false }) {
-                            Text(t("Đóng", "Close"), color = NaturalPrimary)
-                        }
+                    },
+                    onSelectLogo = { logoKey ->
+                        categoryDraftLogo = logoKey
+                        showLogoLibraryDialog = false
                     }
                 )
             }
@@ -2186,7 +2108,12 @@ fun SettingsView(
                             isActive = themeSelection == "lavender",
                             onClick = { onThemeSelectionChange("lavender") }
                         )
-                        Box(modifier = Modifier.weight(1f)) // spacer block
+                        ThemeColorItem(
+                            title = "Teal Breeze",
+                            dotColor = Color(0xFF008080),
+                            isActive = themeSelection == "teal",
+                            onClick = { onThemeSelectionChange("teal") }
+                        )
                     }
                 }
             }
@@ -2798,27 +2725,178 @@ val CATEGORY_LOGOS = mapOf(
 )
 
 val LOGO_DISPLAY_NAMES = mapOf(
-    "logo_01_work" to "Work",
-    "logo_02_business" to "Business",
-    "logo_03_goals" to "Goals",
-    "logo_04_growth" to "Growth",
-    "logo_05_ideas" to "Ideas",
-    "logo_06_study" to "Study",
-    "logo_07_education" to "Education",
-    "logo_08_writing" to "Writing",
-    "logo_09_reading" to "Reading",
-    "logo_10_knowledge" to "Knowledge",
-    "logo_11_fitness" to "Fitness",
-    "logo_12_photography" to "Photography",
-    "logo_13_music" to "Music",
-    "logo_14_art" to "Art",
-    "logo_15_gaming" to "Gaming",
-    "logo_16_travel" to "Travel",
-    "logo_17_coffee" to "Coffee",
-    "logo_18_movies" to "Movies",
-    "logo_19_entertainment" to "Entertainment",
-    "logo_20_social" to "Social"
+    "logo_01_work" to ("Công việc" to "Work"),
+    "logo_02_business" to ("Kinh doanh" to "Business"),
+    "logo_03_goals" to ("Mục tiêu" to "Goals"),
+    "logo_04_growth" to ("Phát triển" to "Growth"),
+    "logo_05_ideas" to ("Ý tưởng" to "Ideas"),
+    "logo_06_study" to ("Học tập" to "Study"),
+    "logo_07_education" to ("Giáo dục" to "Education"),
+    "logo_08_writing" to ("Viết lách" to "Writing"),
+    "logo_09_reading" to ("Đọc sách" to "Reading"),
+    "logo_10_knowledge" to ("Kiến thức" to "Knowledge"),
+    "logo_11_fitness" to ("Thể hình" to "Fitness"),
+    "logo_12_photography" to ("Nhiếp ảnh" to "Photography"),
+    "logo_13_music" to ("Âm nhạc" to "Music"),
+    "logo_14_art" to ("Nghệ thuật" to "Art"),
+    "logo_15_gaming" to ("Trò chơi" to "Gaming"),
+    "logo_16_travel" to ("Du lịch" to "Travel"),
+    "logo_17_coffee" to ("Cà phê" to "Coffee"),
+    "logo_18_movies" to ("Phim ảnh" to "Movies"),
+    "logo_19_entertainment" to ("Giải trí" to "Entertainment"),
+    "logo_20_social" to ("Xã hội" to "Social")
 )
+
+fun logoDisplayName(logoKey: String, language: String): String {
+    val names = LOGO_DISPLAY_NAMES[logoKey] ?: return appText(language, "Biểu tượng", "Icon")
+    return appText(language, names.first, names.second)
+}
+
+@Composable
+fun CategoryIconPickerDialog(
+    language: String,
+    selectedLogo: String,
+    onDismiss: () -> Unit,
+    onPickGalleryLogo: () -> Unit,
+    onSelectLogo: (String) -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val t = { vi: String, en: String -> appText(language, vi, en) }
+    val NaturalText = colors.onBackground
+    val NaturalPrimary = colors.primary
+    val NaturalSecondary = colors.secondary
+    val NaturalTertiary = colors.tertiary
+    val NaturalBorder = colors.outline
+    val NaturalAccentChip = colors.primaryContainer
+    val logosList = CATEGORY_LOGOS.keys.toList()
+    val rowCount = (logosList.size + 3) / 4
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = true
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f)),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
+                border = BorderStroke(1.dp, NaturalBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = t("Chọn biểu tượng", "Choose icon"),
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = NaturalText
+                        )
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = t("Đóng", "Close"), tint = NaturalTertiary)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = onPickGalleryLogo,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, NaturalPrimary)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.PhotoLibrary, null, tint = NaturalPrimary)
+                            Text(t("Chọn từ thư viện", "Choose from Gallery"), color = NaturalPrimary, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Text(
+                        t("Hoặc chọn biểu tượng có sẵn:", "Or select a standard icon:"),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = NaturalSecondary
+                    )
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        repeat(rowCount) { rowIndex ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                for (colIndex in 0 until 4) {
+                                    val logoKey = logosList.getOrNull(rowIndex * 4 + colIndex)
+                                    if (logoKey != null) {
+                                        val optIcon = CATEGORY_LOGOS[logoKey] ?: Icons.Default.List
+                                        val isChosen = selectedLogo == logoKey
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(86.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (isChosen) NaturalAccentChip else colors.surfaceVariant)
+                                                .border(1.dp, if (isChosen) NaturalPrimary else Color.Transparent, RoundedCornerShape(12.dp))
+                                                .clickable { onSelectLogo(logoKey) }
+                                                .padding(horizontal = 4.dp, vertical = 8.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                optIcon,
+                                                contentDescription = null,
+                                                tint = if (isChosen) NaturalPrimary else NaturalSecondary,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = logoDisplayName(logoKey, language),
+                                                fontSize = 10.sp,
+                                                lineHeight = 11.sp,
+                                                color = NaturalTertiary,
+                                                textAlign = TextAlign.Center,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun CategoryLogoDisplay(
@@ -3513,7 +3591,7 @@ fun CategoryDetailsView(
                                     modifier = Modifier.size(24.dp)
                                 )
                                 Text(
-                                    text = LOGO_DISPLAY_NAMES[editLogo] ?: "Default Icon",
+                                    text = logoDisplayName(editLogo, language),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = NaturalText
@@ -3577,97 +3655,19 @@ fun CategoryDetailsView(
 
     // Logo library popover Dialog
     if (showLogoPicker) {
-        AlertDialog(
-            onDismissRequest = { showLogoPicker = false },
-            title = { Text(t("Chọn biểu tượng", "Select icon"), fontWeight = FontWeight.Bold, color = NaturalText) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            onPickGalleryLogo?.invoke { savedPath ->
-                                editLogo = savedPath
-                                showLogoPicker = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, NaturalPrimary)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.PhotoLibrary, null, tint = NaturalPrimary)
-                            Text(t("Chọn từ thư viện", "Choose from Gallery"), color = NaturalPrimary, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-
-                    Text(
-                        "Or select standard minimalism icon:",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = NaturalSecondary
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp)
-                    ) {
-                        val logosList = CATEGORY_LOGOS.keys.toList()
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                        val rowCount = (logosList.size + 3) / 4
-                        items(rowCount) { rowIndex ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                for (colIndex in 0 until 4) {
-                                    val logIndex = rowIndex * 4 + colIndex
-                                    val logoKey = logosList.getOrNull(logIndex)
-                                    if (logoKey != null) {
-                                        val optIcon = CATEGORY_LOGOS[logoKey] ?: Icons.Default.List
-                                        val isChosen = editLogo == logoKey
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .aspectRatio(1f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isChosen) NaturalAccentChip else colors.surfaceVariant)
-                                                .border(1.dp, if (isChosen) NaturalPrimary else Color.Transparent, RoundedCornerShape(8.dp))
-                                                .clickable {
-                                                    editLogo = logoKey
-                                                    showLogoPicker = false
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Icon(optIcon, null, tint = if (isChosen) NaturalPrimary else NaturalSecondary, modifier = Modifier.size(24.dp))
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                Text(LOGO_DISPLAY_NAMES[logoKey]?.take(6) ?: "Logo", fontSize = 8.sp, color = NaturalTertiary, maxLines = 1)
-                                            }
-                                        }
-                                    } else {
-                                        Box(modifier = Modifier.weight(1f))
-                                    }
-                                }
-                            }
-                        }
-                    }
+        CategoryIconPickerDialog(
+            language = language,
+            selectedLogo = editLogo,
+            onDismiss = { showLogoPicker = false },
+            onPickGalleryLogo = {
+                onPickGalleryLogo?.invoke { savedPath ->
+                    editLogo = savedPath
+                    showLogoPicker = false
                 }
-            }
-        },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showLogoPicker = false }) {
-                    Text("Close", color = NaturalPrimary)
-                }
+            },
+            onSelectLogo = { logoKey ->
+                editLogo = logoKey
+                showLogoPicker = false
             }
         )
     }

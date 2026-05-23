@@ -203,6 +203,43 @@ private val LavenderDark = darkColorScheme(
     outlineVariant = Color(0xFF815299)
 )
 
+// Theme 6: Teal Breeze
+private val TealLight = lightColorScheme(
+    primary = Color(0xFF008080),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFE0F2F1),
+    onPrimaryContainer = Color(0xFF004D40),
+    secondary = Color(0xFF005F5F),
+    onSecondary = Color(0xFFFFFFFF),
+    tertiary = Color(0xFF00796B),
+    background = Color(0xFFF2F9F9),
+    onBackground = Color(0xFF111E1D),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF111D1C),
+    surfaceVariant = Color(0xFFD6EBE9),
+    onSurfaceVariant = Color(0xFF004D40),
+    outline = Color(0xFFB2DFDB),
+    outlineVariant = Color(0xFF80CBC4)
+)
+
+private val TealDark = darkColorScheme(
+    primary = Color(0xFF80CBC4),
+    onPrimary = Color(0xFF00332D),
+    primaryContainer = Color(0xFF004D40),
+    onPrimaryContainer = Color(0xFFE0F2F1),
+    secondary = Color(0xFFB2DFDB),
+    onSecondary = Color(0xFF00332D),
+    tertiary = Color(0xFF4DB6AC),
+    background = Color(0xFF0E1615),
+    onBackground = Color(0xFFE0F2F1),
+    surface = Color(0xFF182322),
+    onSurface = Color(0xFFE0F2F1),
+    surfaceVariant = Color(0xFF233533),
+    onSurfaceVariant = Color(0xFFB2DFDB),
+    outline = Color(0xFF334D4A),
+    outlineVariant = Color(0xFF40605D)
+)
+
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = false,
@@ -215,6 +252,7 @@ fun MyApplicationTheme(
         "blossom" -> if (darkTheme) BlossomDark else BlossomLight
         "peach" -> if (darkTheme) PeachDark else PeachLight
         "lavender" -> if (darkTheme) LavenderDark else LavenderLight
+        "teal" -> if (darkTheme) TealDark else TealLight
         else -> if (darkTheme) DenimDark else DenimLight
     }
 
