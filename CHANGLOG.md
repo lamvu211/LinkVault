@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.4 - 2026-05-23
+
+- Added a Settings button to check the latest public GitHub Release and open the APK download page when an update is available.
+- Simplified the note popup by removing field headers and aligning the link input, category picker, and category dropdown sizing.
+- Removed Settings section headers and the User Guide card description for a cleaner layout.
+- Fixed the User Guide confirmation button so it follows the selected app language.
+- Updated release metadata to versionCode 4 and versionName 0.4.
+
+## 0.3 - 2026-05-23
+
+- Moved category selection above the note field in the add/edit note popup.
+- Added a create-category option inside the note category dropdown and returns to the note popup with the new category selected.
+- Reduced the note field to two lines and keeps the keyboard Enter key as newline input instead of save.
+- Changed the note editor to a top-aligned popup that avoids the status bar and removes extra bottom whitespace.
+- Updated release metadata to versionCode 3 and versionName 0.3.
+
 ## 0.2 - 2026-05-23
 
 - Added in-app language switching in Settings with Vietnamese and English options.

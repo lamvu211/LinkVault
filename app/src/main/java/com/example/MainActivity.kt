@@ -93,6 +93,57 @@ private fun appText(language: String, vi: String, en: String): String = if (lang
 
 private fun searchPlaceholder(language: String): String = appText(language, "Bạn muốn tìm gì?", "What are you looking for?")
 
+data class GithubReleaseInfo(
+    val tagName: String,
+    val htmlUrl: String,
+    val apkUrl: String?
+)
+
+suspend fun fetchLatestGithubRelease(): GithubReleaseInfo = withContext(Dispatchers.IO) {
+    val request = okhttp3.Request.Builder()
+        .url("https://api.github.com/repos/lamvu211/LinkVault/releases/latest")
+        .header("Accept", "application/vnd.github+json")
+        .build()
+
+    okhttp3.OkHttpClient().newCall(request).execute().use { response ->
+        if (!response.isSuccessful) {
+            throw IllegalStateException("GitHub returned ${response.code}")
+        }
+
+        val body = response.body?.string() ?: throw IllegalStateException("GitHub returned an empty response")
+        val json = org.json.JSONObject(body)
+        val assets = json.optJSONArray("assets")
+        var apkUrl: String? = null
+        if (assets != null) {
+            for (index in 0 until assets.length()) {
+                val asset = assets.getJSONObject(index)
+                if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
+                    apkUrl = asset.optString("browser_download_url")
+                    break
+                }
+            }
+        }
+
+        GithubReleaseInfo(
+            tagName = json.optString("tag_name"),
+            htmlUrl = json.optString("html_url"),
+            apkUrl = apkUrl
+        )
+    }
+}
+
+fun isRemoteVersionNewer(currentVersion: String, remoteTag: String): Boolean {
+    val currentParts = currentVersion.trim().removePrefix("v").split(".").map { it.toIntOrNull() ?: 0 }
+    val remoteParts = remoteTag.trim().removePrefix("v").split(".").map { it.toIntOrNull() ?: 0 }
+    val maxSize = maxOf(currentParts.size, remoteParts.size)
+    for (index in 0 until maxSize) {
+        val current = currentParts.getOrElse(index) { 0 }
+        val remote = remoteParts.getOrElse(index) { 0 }
+        if (remote != current) return remote > current
+    }
+    return false
+}
+
 fun formatRelativeTime(timestamp: Long, language: String): String {
     val now = System.currentTimeMillis()
     val diff = now - timestamp
@@ -295,6 +346,8 @@ fun MainAppScreen(
     var categoryDraftName by remember { mutableStateOf("") }
     var categoryDraftLogo by remember { mutableStateOf("logo_01_work") }
     var showLogoLibraryDialog by remember { mutableStateOf(false) }
+    var returnToNoteFormAfterCategoryCreate by remember { mutableStateOf(false) }
+    var pendingCreatedCategoryName by remember { mutableStateOf<String?>(null) }
 
     // Keyboard Focus Requester
     val noteFocusRequester = remember { FocusRequester() }
@@ -374,6 +427,15 @@ fun MainAppScreen(
             if (isFromShareIntent) {
                 onFinishActivity()
             }
+        }
+    }
+
+    LaunchedEffect(categories, pendingCreatedCategoryName) {
+        val createdName = pendingCreatedCategoryName ?: return@LaunchedEffect
+        val createdCategory = categories.firstOrNull { it.name.equals(createdName, ignoreCase = true) }
+        if (createdCategory != null) {
+            selectedCategoryId = createdCategory.id
+            pendingCreatedCategoryName = null
         }
     }
 
@@ -670,17 +732,17 @@ fun MainAppScreen(
                             .fillMaxSize()
                             .background(Color.Black.copy(alpha = 0.5f))
                             .clickable(enabled = true, onClick = { handleCloseAction() }),
-                        contentAlignment = Alignment.BottomCenter
+                        contentAlignment = Alignment.TopCenter
                     ) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .fillMaxHeight(0.88f)
-                                .navigationBarsPadding()
+                                .statusBarsPadding()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
                                 .imePadding()
                                 .clickable(enabled = false, onClick = {}) // stop click propagation
                                 .testTag("add_link_form_container"),
-                        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                        shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(containerColor = colors.surface),
                         border = BorderStroke(1.dp, NaturalBorder),
                         elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
@@ -703,13 +765,6 @@ fun MainAppScreen(
 
                             // URL input field & Action SAVE in SAME Row
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = t("Đường dẫn", "Link"),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = NaturalSecondary
-                                )
-
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -721,6 +776,7 @@ fun MainAppScreen(
                                         placeholder = { Text("https://example.com/site", color = NaturalTertiary) },
                                         modifier = Modifier
                                             .weight(1.0f)
+                                            .height(50.dp)
                                             .testTag("input_url_field"),
                                         singleLine = true,
                                         shape = RoundedCornerShape(12.dp),
@@ -782,64 +838,29 @@ fun MainAppScreen(
                                 }
                             }
 
-                            // Supplemental notes field
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = t("Ghi chú", "Note"),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = NaturalSecondary
-                                )
-                                OutlinedTextField(
-                                    value = inputNote,
-                                    onValueChange = { if (it.length <= 60) inputNote = it },
-                                    placeholder = { Text(t("Nhập ghi chú tại đây...", "Write a note here..."), color = NaturalTertiary) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(110.dp)
-                                        .focusRequester(noteFocusRequester)
-                                        .testTag("input_note_field"),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = NaturalPrimary,
-                                        unfocusedBorderColor = NaturalBorder,
-                                        focusedContainerColor = colors.surface,
-                                        unfocusedContainerColor = colors.surface,
-                                        focusedTextColor = NaturalText,
-                                        unfocusedTextColor = NaturalText
-                                    ),
-                                    maxLines = 4
-                                )
-                            }
-
                             // Category selection Dropdown
                             var dropdownExpanded by remember { mutableStateOf(false) }
                             val activeCategory = categories.find { it.id == selectedCategoryId }
 
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = t("Danh mục", "Category"),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = NaturalSecondary
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(50.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .border(1.dp, NaturalBorder, RoundedCornerShape(12.dp))
-                                        .background(colors.surface)
-                                        .clickable { dropdownExpanded = true }
-                                        .padding(horizontal = 16.dp),
-                                    contentAlignment = Alignment.CenterStart
+                                BoxWithConstraints(
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
+                                    val dropdownWidth = maxWidth
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(50.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .border(1.dp, NaturalBorder, RoundedCornerShape(12.dp))
+                                            .background(colors.surface)
+                                            .clickable { dropdownExpanded = true }
+                                            .padding(horizontal = 16.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Row(
+                                            modifier = Modifier.weight(1f),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -853,7 +874,9 @@ fun MainAppScreen(
                                                     text = activeCategory.name,
                                                     fontSize = 14.sp,
                                                     color = NaturalText,
-                                                    fontWeight = FontWeight.Medium
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                             } else {
                                                 Icon(
@@ -871,7 +894,7 @@ fun MainAppScreen(
                                         }
                                         Icon(
                                             imageVector = Icons.Default.ArrowDropDown,
-                                            contentDescription = "Expand categories",
+                                            contentDescription = t("Mở danh sách danh mục", "Expand categories"),
                                             tint = NaturalSecondary
                                         )
                                     }
@@ -880,9 +903,9 @@ fun MainAppScreen(
                                         expanded = dropdownExpanded,
                                         onDismissRequest = { dropdownExpanded = false },
                                         modifier = Modifier
-                                            .fillMaxWidth(0.85f)
+                                            .width(dropdownWidth)
                                             .background(colors.surface)
-                                            .border(1.dp, NaturalBorder, RoundedCornerShape(8.dp))
+                                            .border(1.dp, NaturalBorder, RoundedCornerShape(12.dp))
                                     ) {
                                         DropdownMenuItem(
                                             text = {
@@ -890,7 +913,31 @@ fun MainAppScreen(
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Icon(Icons.Default.List, null, tint = NaturalTertiary)
+                                                    Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
+                                                        Icon(Icons.Default.Add, null, tint = NaturalPrimary, modifier = Modifier.size(20.dp))
+                                                    }
+                                                    Text(t("Tạo danh mục mới", "Create new category"), color = NaturalPrimary, fontWeight = FontWeight.SemiBold)
+                                                }
+                                            },
+                                            onClick = {
+                                                dropdownExpanded = false
+                                                categoryDraftName = ""
+                                                categoryDraftLogo = "logo_01_work"
+                                                returnToNoteFormAfterCategoryCreate = true
+                                                showAddManualForm = false
+                                                showAddCategoryForm = true
+                                            }
+                                        )
+                                        HorizontalDivider(color = NaturalBorder.copy(alpha = 0.6f))
+                                        DropdownMenuItem(
+                                            text = {
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
+                                                        Icon(Icons.Default.List, null, tint = NaturalTertiary, modifier = Modifier.size(20.dp))
+                                                    }
                                                     Text(t("Không có danh mục", "No category"), color = NaturalText)
                                                 }
                                             },
@@ -906,8 +953,10 @@ fun MainAppScreen(
                                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        CategoryLogoDisplay(logoKey = category.logo, size = 24.dp, tint = NaturalPrimary)
-                                                        Text(category.name, color = NaturalText)
+                                                        Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
+                                                            CategoryLogoDisplay(logoKey = category.logo, size = 20.dp, tint = NaturalPrimary)
+                                                        }
+                                                        Text(category.name, color = NaturalText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                     }
                                                 },
                                                 onClick = {
@@ -918,6 +967,35 @@ fun MainAppScreen(
                                         }
                                     }
                                 }
+                            }
+
+                            // Supplemental notes field
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                OutlinedTextField(
+                                    value = inputNote,
+                                    onValueChange = { if (it.length <= 60) inputNote = it },
+                                    placeholder = { Text(t("Nhập ghi chú tại đây...", "Write a note here..."), color = NaturalTertiary) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(84.dp)
+                                        .focusRequester(noteFocusRequester)
+                                        .testTag("input_note_field"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = NaturalPrimary,
+                                        unfocusedBorderColor = NaturalBorder,
+                                        focusedContainerColor = colors.surface,
+                                        unfocusedContainerColor = colors.surface,
+                                        focusedTextColor = NaturalText,
+                                        unfocusedTextColor = NaturalText
+                                    ),
+                                    minLines = 2,
+                                    maxLines = 2,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Text,
+                                        imeAction = ImeAction.Default
+                                    )
+                                )
                             }
                         }
                     }
@@ -986,7 +1064,13 @@ fun MainAppScreen(
             if (showAddCategoryForm) {
                 var createNameError by remember { mutableStateOf(false) }
                 AlertDialog(
-                    onDismissRequest = { showAddCategoryForm = false },
+                    onDismissRequest = {
+                        showAddCategoryForm = false
+                        if (returnToNoteFormAfterCategoryCreate) {
+                            returnToNoteFormAfterCategoryCreate = false
+                            showAddManualForm = true
+                        }
+                    },
                     title = { Text(t("Tạo danh mục mới", "Create category"), fontWeight = FontWeight.Bold, color = NaturalText) },
                     text = {
                         Column(
@@ -1075,9 +1159,15 @@ fun MainAppScreen(
                                     Toast.makeText(context, t("Vui lòng nhập tên danh mục.", "Please enter a category name."), Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
-                                viewModel.saveCategory(categoryDraftName, categoryDraftLogo)
+                                val createdCategoryName = categoryDraftName.trim()
+                                viewModel.saveCategory(createdCategoryName, categoryDraftLogo)
                                 Toast.makeText(context, t("Đã tạo danh mục.", "Category created."), Toast.LENGTH_SHORT).show()
+                                pendingCreatedCategoryName = createdCategoryName
                                 showAddCategoryForm = false
+                                if (returnToNoteFormAfterCategoryCreate) {
+                                    returnToNoteFormAfterCategoryCreate = false
+                                    showAddManualForm = true
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
                         ) {
@@ -1086,7 +1176,13 @@ fun MainAppScreen(
                     },
                     dismissButton = {
                         TextButton(
-                            onClick = { showAddCategoryForm = false }
+                            onClick = {
+                                showAddCategoryForm = false
+                                if (returnToNoteFormAfterCategoryCreate) {
+                                    returnToNoteFormAfterCategoryCreate = false
+                                    showAddManualForm = true
+                                }
+                            }
                         ) {
                             Text(t("Hủy", "Cancel"), color = NaturalTertiary)
                         }
@@ -1911,14 +2007,6 @@ fun SettingsView(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = t("NGÔN NGỮ", "LANGUAGE"),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = NaturalPrimary,
-                    letterSpacing = 1.sp
-                )
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1975,14 +2063,6 @@ fun SettingsView(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = t("CHẾ ĐỘ HIỂN THỊ", "APPEARANCE MODE"),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = NaturalPrimary,
-                    letterSpacing = 1.sp
-                )
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -2061,14 +2141,6 @@ fun SettingsView(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = t("MÀU GIAO DIỆN", "THEME STYLES"),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = NaturalPrimary,
-                    letterSpacing = 1.sp
-                )
-
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2127,6 +2199,9 @@ fun SettingsView(
         var showExportChoiceDialog by remember { mutableStateOf(false) }
         var showSavedSuccessDialog by remember { mutableStateOf(false) }
         var importErrorMessage by remember { mutableStateOf<String?>(null) }
+        var updateMessage by remember { mutableStateOf<String?>(null) }
+        var updateDownloadUrl by remember { mutableStateOf<String?>(null) }
+        var isCheckingUpdate by remember { mutableStateOf(false) }
         var savedUri by remember { mutableStateOf<Uri?>(null) }
 
         val csvImportLauncher = rememberLauncherForActivityResult(
@@ -2391,20 +2466,14 @@ fun SettingsView(
                     )
                 }
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = t("HƯỚNG DẪN SỬ DỤNG", "USER GUIDE"),
-                        fontSize = 11.sp,
-                        color = NaturalPrimary,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        text = t("Các thao tác nhanh để quản lý ghi chú và liên kết", "Quick actions for managing notes and links"),
-                        fontSize = 13.sp,
-                        color = NaturalTertiary
-                    )
-                }
+                Text(
+                    text = t("HƯỚNG DẪN SỬ DỤNG", "USER GUIDE"),
+                    fontSize = 11.sp,
+                    color = NaturalPrimary,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.weight(1f)
+                )
 
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
@@ -2412,6 +2481,95 @@ fun SettingsView(
                     tint = NaturalTertiary
                 )
             }
+        }
+
+        Button(
+            onClick = {
+                isCheckingUpdate = true
+                coroutineScope.launch {
+                    try {
+                        val release = fetchLatestGithubRelease()
+                        val isNewer = isRemoteVersionNewer(BuildConfig.VERSION_NAME, release.tagName)
+                        updateDownloadUrl = if (isNewer) release.apkUrl ?: release.htmlUrl else null
+                        updateMessage = if (isNewer) {
+                            t(
+                                "Đã có phiên bản ${release.tagName}. Bạn có muốn mở trang tải APK không?",
+                                "Version ${release.tagName} is available. Open the APK download page?"
+                            )
+                        } else {
+                            t(
+                                "Bạn đang dùng phiên bản mới nhất (${BuildConfig.VERSION_NAME}).",
+                                "You are using the latest version (${BuildConfig.VERSION_NAME})."
+                            )
+                        }
+                    } catch (e: Exception) {
+                        updateDownloadUrl = null
+                        updateMessage = t(
+                            "Không thể kiểm tra cập nhật. Vui lòng thử lại sau.",
+                            "Could not check for updates. Please try again later."
+                        )
+                    } finally {
+                        isCheckingUpdate = false
+                    }
+                }
+            },
+            enabled = !isCheckingUpdate,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .testTag("check_update_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.SystemUpdate,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = Color.White
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (isCheckingUpdate) t("Đang kiểm tra...", "Checking...") else t("Kiểm tra cập nhật", "Check update"),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+
+        if (updateMessage != null) {
+        AlertDialog(
+            onDismissRequest = { updateMessage = null },
+            title = { Text(t("Cập nhật", "Update"), fontWeight = FontWeight.Bold, color = NaturalText) },
+            text = { Text(updateMessage.orEmpty(), color = NaturalSecondary) },
+            confirmButton = {
+                if (updateDownloadUrl != null) {
+                    Button(
+                        onClick = {
+                            val openIntent = Intent(Intent.ACTION_VIEW, Uri.parse(updateDownloadUrl))
+                            context.startActivity(openIntent)
+                            updateMessage = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
+                    ) {
+                        Text(t("Mở trang tải", "Open download"), color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = { updateMessage = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
+                    ) {
+                        Text(t("Đã hiểu", "Got it"), color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                if (updateDownloadUrl != null) {
+                    TextButton(onClick = { updateMessage = null }) {
+                        Text(t("Để sau", "Later"), color = NaturalTertiary)
+                    }
+                }
+            }
+        )
         }
     }
 
@@ -2535,7 +2693,7 @@ fun SettingsView(
                     onClick = { showUserGuideDialog = false },
                     colors = ButtonDefaults.buttonColors(containerColor = NaturalPrimary)
                 ) {
-                    Text("Đã hiểu", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(t("Đã hiểu", "Got it"), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         )
