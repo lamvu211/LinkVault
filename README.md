@@ -1,17 +1,20 @@
 # LinkVault
 
-**Save every useful link. Find it again when you need it.**
+**Save useful links, organize them with notes, and find them again fast.**
 
-LinkVault is a clean, local-first Android app for collecting links from the web, social apps, chats, and anywhere Android sharing works. Instead of losing useful URLs in messages, notes, or browser tabs, LinkVault gives you one focused place to save, categorize, search, and export them.
+LinkVault is a local-first Android app for collecting links from browsers, social apps, chats, and anywhere Android sharing works. It keeps saved URLs, notes, categories, and visual organization in one focused place so useful content does not get lost in messages, browser tabs, or temporary notes.
 
-## Why LinkVault?
+## Highlights
 
-- **Capture links fast** — save manually or share text/URLs directly from other Android apps.
-- **Stay organized** — group links into categories, add notes, and tag important items.
-- **Find anything quickly** — search by title, URL, note, or tag.
-- **Keep control of your data** — links are stored locally on your device with a separate vault per signed-in Google account.
-- **Make it yours** — choose light, dark, or system theme and switch between multiple color styles.
-- **Take your data with you** — export saved links to CSV for backup or sharing.
+- **Fast link capture** — add links manually or share text/URLs into LinkVault from other Android apps.
+- **Notes-first organization** — attach short notes, choose categories, and edit saved items quickly.
+- **Visual categories** — create categories with built-in icons or custom images from your gallery.
+- **Search everywhere** — search saved links from the main list or inside a category.
+- **Per-note sharing** — share any saved note/link back to other apps.
+- **CSV import and export** — back up your vault or move data with `Link,Note,Category` CSV files.
+- **Vietnamese and English UI** — switch language directly in Settings.
+- **Personal themes** — choose Light, Dark, or System mode and six color styles: Denim Cool, Forest Jade, Blossom Rose, Peach Amber, Lavender Mist, and Teal Breeze.
+- **Update check** — check the latest public GitHub Release from Settings and open the APK download page when a newer version is available.
 
 ## App Screens
 
@@ -19,19 +22,23 @@ LinkVault is a clean, local-first Android app for collecting links from the web,
 | --- | --- | --- |
 | <img src="docs/screenshots/Links.jpg" alt="Links screen" width="260" /> | <img src="docs/screenshots/Categories.jpg" alt="Categories screen" width="260" /> | <img src="docs/screenshots/Settings.jpg" alt="Settings screen" width="260" /> |
 
-## Main Features
+## Main Flows
 
 ### Links
 
-Save links with a title, URL, note, tags, and category. Sort by recent date, title, or domain, then swipe to edit or delete when your vault needs cleanup.
+Save a URL with a note and category, then open, edit, delete, or share it from the list. The add/edit popup is designed for mobile keyboards and keeps category selection accessible while typing.
 
 ### Categories
 
-Create visual categories with built-in or custom logos. Reorder categories by drag and drop so your most important collections stay within reach.
+Create visual categories, choose a localized default icon or crop a custom gallery image, and reorder categories by drag and drop. Category detail screens include their own search and the same link actions as the main list.
 
 ### Settings
 
-Personalize the app theme, manage account access, and export your saved data to CSV.
+Switch language, appearance mode, and color theme. Import or export CSV files, open the user guide, log out, or check for a newer GitHub Release.
+
+## Data and Privacy
+
+LinkVault stores data locally on the device using Room. Each signed-in Google account gets its own local vault. CSV import/export is user initiated, and generated APKs, keystores, `.env` files, and other sensitive artifacts should stay out of git.
 
 ## Built With
 
@@ -41,29 +48,23 @@ Personalize the app theme, manage account access, and export your saved data to 
 - Room local database
 - Kotlin Coroutines and Flow
 - Google account picker
+- OkHttp for public GitHub Release checks
 
-## Getting Started
+## Development
 
-1. Open the project in Android Studio.
-2. Sync Gradle dependencies.
-3. Run the `app` configuration on an emulator or Android device.
+Open the project in Android Studio, sync Gradle dependencies, then run the `app` configuration on an emulator or Android device.
 
-## Development Commands
+Common commands:
 
 | Command | Description |
 | --- | --- |
-| `./gradlew assembleDebug` | Build a debug APK |
-| `./gradlew test` | Run local tests |
-| `./gradlew connectedAndroidTest` | Run Android instrumented tests |
-
-On Windows, use `./gradlew.bat` if the Gradle wrapper is available.
-
-## Privacy & Security
-
-LinkVault is designed around local storage. Avoid committing generated APKs, keystores, `.env` files, or Firebase configuration files to the repository.
+| `gradle :app:assembleDebug` | Build a debug APK |
+| `gradle :app:testDebugUnitTest` | Run local unit tests |
+| `gradle :app:assembleRelease` | Build the signed release APK when release signing env vars are configured |
 
 ## Current App Details
 
 - App name: **LinkVault**
-- Minimum SDK: 24
-- Target SDK: 36
+- Current release: **0.6**
+- Minimum SDK: **24**
+- Target SDK: **36**
